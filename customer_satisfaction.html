@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>고객 만족을 향하여 (Sketch Scroller)</title>
+    <style>
+        /* CSS Settings */
+        * {
+            box-sizing: border-box;
+        }
+
+        body,
+        html {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            background-color: #e0e0e0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        #game-wrapper {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            height: 400px;
+            background-color: #faf8ef;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            border: 4px solid #2c3e50;
+        }
+
+        /* SVG Filters for Sketch style */
+        .sketchy {
+            filter: url(#pencil);
+        }
+
+        .sketch-stroke {
+            stroke: #2c3e50;
+            stroke-width: 2.5;
+            fill: none;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .sketch-fill {
+            fill: #faf8ef;
+            stroke: #2c3e50;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        /* Game Elements */
+        #player {
+            position: absolute;
+            width: 60px;
+            height: 80px;
+            left: 80px;
+            bottom: 20px;
+            z-index: 5;
+        }
+
+        .cloud {
+            position: absolute;
+        }
+
+        .item {
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 16px;
+            font-weight: bold;
+            color: #2c3e50;
+            z-index: 4;
+        }
+
+        .item svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+        }
+
+        #goal {
+            position: absolute;
+            width: 120px;
+            height: 160px;
+            bottom: 20px;
+            z-index: 3;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        #goal svg {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Ground Animation */
+        #ground {
+            position: absolute;
+            bottom: 20px;
+            left: 0;
+            width: 200%;
+            height: 2px;
+            border-bottom: 2px dashed #2c3e50;
+            z-index: 2;
+        }
+
+        /* Pixel Art Player (Uma Musume Style) */
+        #player {
+            position: absolute;
+            width: 48px;
+            height: 64px;
+            left: 80px;
+            bottom: 20px;
+            z-index: 5;
+        }
+
+        .pixel-uma {
+            width: 8px;
+            /* 1 pixel = 8x8 px block */
+            height: 8px;
+            /* Base pose built with box-shadow */
+            box-shadow:
+                /* Ears (Brown) */
+                16px 0px 0 #5c3a21, 32px 0px 0 #5c3a21,
+                16px 8px 0 #5c3a21, 32px 8px 0 #5c3a21,
+                /* Hair / Head (Brown) */
+                16px 16px 0 #5c3a21, 24px 16px 0 #5c3a21, 32px 16px 0 #5c3a21,
+                8px 24px 0 #5c3a21, 16px 24px 0 #fadaa5, 24px 24px 0 #fadaa5, 32px 24px 0 #fadaa5, 40px 24px 0 #5c3a21,
+                16px 32px 0 #fadaa5, 24px 32px 0 #fadaa5, 32px 32px 0 #fadaa5,
+                /* Eyes */
+                16px 24px 0 #2c3e50, 32px 24px 0 #2c3e50,
+                /* Body (School uniform - White shirt, Bow, Blue Skirt) */
+                24px 40px 0 #ffffff,
+                16px 48px 0 #ffffff, 24px 48px 0 #e74c3c, 32px 48px 0 #ffffff,
+                16px 56px 0 #2980b9, 24px 56px 0 #2980b9, 32px 56px 0 #2980b9;
+        }
+
+        /* Running animations via CSS classes flipping box-shadow for legs/arms */
+        .pixel-uma.run-1 {
+            box-shadow:
+                16px 0px 0 #5c3a21, 32px 0px 0 #5c3a21,
+                16px 8px 0 #5c3a21, 32px 8px 0 #5c3a21,
+                16px 16px 0 #5c3a21, 24px 16px 0 #5c3a21, 32px 16px 0 #5c3a21,
+                8px 24px 0 #5c3a21, 16px 24px 0 #2c3e50, 24px 24px 0 #fadaa5, 32px 24px 0 #2c3e50, 40px 24px 0 #5c3a21,
+                16px 32px 0 #fadaa5, 24px 32px 0 #fadaa5, 32px 32px 0 #fadaa5,
+                24px 40px 0 #ffffff,
+                16px 48px 0 #ffffff, 24px 48px 0 #e74c3c, 32px 48px 0 #ffffff,
+                16px 56px 0 #2980b9, 24px 56px 0 #2980b9, 32px 56px 0 #2980b9,
+                /* Arm Front & Leg Back */
+                40px 48px 0 #ffffff, 8px 64px 0 #5c3a21, 24px 64px 0 #5c3a21;
+        }
+
+        .pixel-uma.run-2 {
+            box-shadow:
+                16px 0px 0 #5c3a21, 32px 0px 0 #5c3a21,
+                16px 8px 0 #5c3a21, 32px 8px 0 #5c3a21,
+                16px 16px 0 #5c3a21, 24px 16px 0 #5c3a21, 32px 16px 0 #5c3a21,
+                8px 24px 0 #5c3a21, 16px 24px 0 #2c3e50, 24px 24px 0 #fadaa5, 32px 24px 0 #2c3e50, 40px 24px 0 #5c3a21,
+                16px 32px 0 #fadaa5, 24px 32px 0 #fadaa5, 32px 32px 0 #fadaa5,
+                24px 40px 0 #ffffff,
+                16px 48px 0 #ffffff, 24px 48px 0 #e74c3c, 32px 48px 0 #ffffff,
+                16px 56px 0 #2980b9, 24px 56px 0 #2980b9, 32px 56px 0 #2980b9,
+                /* Arm Back & Leg Front */
+                8px 48px 0 #ffffff, 16px 64px 0 #5c3a21, 40px 64px 0 #5c3a21;
+        }
+
+        .pixel-uma.jump {
+            box-shadow:
+                16px -8px 0 #5c3a21, 32px -8px 0 #5c3a21,
+                16px 0px 0 #5c3a21, 32px 0px 0 #5c3a21,
+                16px 8px 0 #5c3a21, 24px 8px 0 #5c3a21, 32px 8px 0 #5c3a21,
+                8px 16px 0 #5c3a21, 16px 16px 0 #2c3e50, 24px 16px 0 #fadaa5, 32px 16px 0 #2c3e50, 40px 16px 0 #5c3a21,
+                16px 24px 0 #fadaa5, 24px 24px 0 #fadaa5, 32px 24px 0 #fadaa5,
+                24px 32px 0 #ffffff,
+                16px 40px 0 #ffffff, 24px 40px 0 #e74c3c, 32px 40px 0 #ffffff,
+                16px 48px 0 #2980b9, 24px 48px 0 #2980b9, 32px 48px 0 #2980b9,
+                /* Jump Limbs */
+                8px 32px 0 #ffffff, 40px 32px 0 #ffffff,
+                8px 56px 0 #5c3a21, 40px 56px 0 #5c3a21;
+        }
+
+        /* Floating Texts */
+        .floating-text {
+            position: absolute;
+            font-size: 20px;
+            font-weight: bold;
+            color: #e74c3c;
+            z-index: 10;
+            animation: floatUp 1s ease-out forwards;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+
+        /* Message Bubble for long texts */
+        #message-bubble {
+            position: absolute;
+            top: 60px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.9);
+            border: 3px solid #3498db;
+            border-radius: 12px;
+            padding: 10px 20px;
+            font-size: 16px;
+            font-weight: bold;
+            color: #2c3e50;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            z-index: 15;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+            max-width: 90%;
+            text-align: center;
+        }
+
+        @keyframes floatUp {
+            0% {
+                opacity: 1;
+                transform: translateY(0);
+            }
+
+            100% {
+                opacity: 0;
+                transform: translateY(-40px);
+            }
+        }
+
+        /* UI Overlays */
+        #ui {
+            position: absolute;
+            top: 15px;
+            left: 20px;
+            font-size: 20px;
+            font-weight: bold;
+            color: #2c3e50;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(250, 248, 239, 0.85);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 20;
+            text-align: center;
+        }
+
+        h1 {
+            font-size: 36px;
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+
+        p {
+            font-size: 18px;
+            color: #34495e;
+            margin: 5px 0;
+            max-width: 80%;
+        }
+
+        button {
+            margin-top: 20px;
+            padding: 12px 24px;
+            font-size: 20px;
+            font-weight: bold;
+            font-family: inherit;
+            background-color: #faf8ef;
+            color: #2c3e50;
+            border: 3px solid #2c3e50;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 4px 4px 0 #2c3e50;
+        }
+
+        button:hover {
+            background-color: #2c3e50;
+            color: #faf8ef;
+            box-shadow: 2px 2px 0 #2c3e50;
+            transform: translate(2px, 2px);
+        }
+
+        button:active {
+            box-shadow: 0 0 0 #2c3e50;
+            transform: translate(4px, 4px);
+        }
+
+        #game-over-screen {
+            display: none;
+        }
+
+        #win-screen {
+            display: none;
+            background: radial-gradient(circle, rgba(250, 248, 239, 0.95) 40%, rgba(255, 230, 200, 0.95) 100%);
+            animation: pulseBg 2s infinite alternate;
+        }
+
+        @keyframes pulseBg {
+            0% {
+                background: radial-gradient(circle, rgba(250, 248, 239, 0.9) 40%, rgba(255, 240, 200, 0.9) 100%);
+            }
+
+            100% {
+                background: radial-gradient(circle, rgba(255, 250, 240, 0.95) 40%, rgba(255, 220, 180, 0.95) 100%);
+            }
+        }
+
+        #win-screen h1 {
+            font-size: 48px;
+            color: #e74c3c;
+            text-shadow: 2px 2px 0px #f1c40f, 4px 4px 0px #2c3e50;
+            animation: popIn 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+            transform: scale(0);
+        }
+
+        @keyframes popIn {
+            to {
+                transform: scale(1);
+            }
+        }
+
+        /* Confetti Particles */
+        #confetti-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 25;
+            overflow: hidden;
+        }
+
+        .confetti {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background-color: #f00;
+            opacity: 0;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Hidden SVG Filters -->
+    <svg width="0" height="0" style="position:absolute;">
+        <filter id="pencil" x="-20%" y="-20%" width="140%" height="140%">
+            <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="3" result="noise"
+                id="turbulence-filter" />
+            <feDisplacementMap in="SourceGraphic" in2="noise" scale="3" xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+    </svg>
+
+    <div id="game-wrapper" class="sketchy">
+        <!-- Background and Ground -->
+        <div id="bg-container"></div>
+        <div id="ground"></div>
+
+        <!-- UI -->
+        <div id="ui">
+            진행 여정: <span id="progress-val">0</span>%<br>
+            달리는 속도: <span id="speed-val">1.0</span>x
+        </div>
+
+        <!-- Long Text Message Bubble -->
+        <div id="message-bubble"></div>
+
+        <!-- Player Character -->
+        <div id="player">
+            <div id="uma-sprite" class="pixel-uma run-1"></div>
+        </div>
+
+        <!-- Items & Entities Container -->
+        <div id="entities-container"></div>
+
+        <!-- Start Screen -->
+        <div id="start-screen" class="screen">
+            <h1>고객 만족을 향하여</h1>
+            <p><strong>점프:</strong> 스페이스바 / 윗방향키 / 마우스 클릭 / 터치 상단</p>
+            <p><strong>이동:</strong> 좌우 방향키 / 터치 좌우</p>
+            <p>공중에 떠 있는 <strong>'양해'</strong>와 <strong>'공감'</strong>을 획득하세요.</p>
+            <p>획득 시 속도가 빨라져 목표에 더 빨리 도달합니다.</p>
+            <button id="start-btn">여정 시작하기</button>
+        </div>
+
+        <!-- Confetti Container for WIN state -->
+        <div id="confetti-container"></div>
+
+        <!-- Win Screen -->
+        <div id="win-screen" class="screen">
+            <h1>🎉 고객 만족 달성! 🎉</h1>
+            <p>당신의 공감과 양해 덕분에 성공적으로 여정을 마쳤습니다.</p>
+            <p id="time-result">소요 시간: 0.0초</p>
+            <button onclick="location.reload()">다시 시작하기</button>
+        </div>
+    </div>
+
+    <script>
+        // --- Game Variables and Configuration ---
+        const TARGET_DISTANCE = 13000; // Expected ~120 seconds for slower speed
+        const BASE_SPEED = 1.6; // Even slower starting speed
+        const MAX_SPEED = 5.0; // Capt peak speed reasonably
+        const GRAVITY = 0.55;
+        const JUMP_FORCE = 11.5;
+
+        let isRunning = false;
+        let distance = 0;
+        let currentSpeed = BASE_SPEED;
+        let frames = 0;
+        let lastTime = 0;
+        let startTime = 0;
+        let lastItemSpawnTime = 0;
+        let endEventTriggered = false;
+        let entities = []; // Items, clouds, and goal
+
+        // Player State
+        const player = { x: 80, y: 0, width: 48, height: 64, vy: 0, vx: 0, isJumping: false };
+        const PLAYER_SPEED_X = 5;
+
+        // Input States
+        const keys = { left: false, right: false };
+
+        // DOM Elements
+        const playerEl = document.getElementById('player');
+        const umaSprite = document.getElementById('uma-sprite');
+        const groundEl = document.getElementById('ground');
+        const entitiesContainer = document.getElementById('entities-container');
+        const bgContainer = document.getElementById('bg-container');
+        const progressVal = document.getElementById('progress-val');
+        const speedVal = document.getElementById('speed-val');
+        const messageBubble = document.getElementById('message-bubble');
+        const turbulence = document.getElementById('turbulence-filter');
+        const wrapper = document.getElementById('game-wrapper');
+
+        // --- Input Handling ---
+        function tryJump() {
+            if (!isRunning) return;
+            if (!player.isJumping) {
+                player.isJumping = true;
+                player.vy = JUMP_FORCE;
+                updatePose(true);
+                playJumpSound();
+            }
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); tryJump(); }
+            if (e.code === 'ArrowLeft') { keys.left = true; }
+            if (e.code === 'ArrowRight') { keys.right = true; }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.code === 'ArrowLeft') { keys.left = false; }
+            if (e.code === 'ArrowRight') { keys.right = false; }
+        });
+
+        // Mouse & Touch handling
+        wrapper.addEventListener('mousedown', (e) => {
+            const rect = wrapper.getBoundingClientRect();
+            const relX = e.clientX - rect.left;
+            if (relX < rect.width / 3) keys.left = true;
+            else if (relX > (rect.width / 3) * 2) keys.right = true;
+            else tryJump();
+        });
+        wrapper.addEventListener('mouseup', () => { keys.left = false; keys.right = false; });
+        wrapper.addEventListener('mouseleave', () => { keys.left = false; keys.right = false; });
+
+        wrapper.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const rect = wrapper.getBoundingClientRect();
+            for (let i = 0; i < e.touches.length; i++) {
+                const relX = e.touches[i].clientX - rect.left;
+                if (relX < rect.width / 3) keys.left = true;
+                else if (relX > (rect.width / 3) * 2) keys.right = true;
+                else tryJump();
+            }
+        }, { passive: false });
+
+        wrapper.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            keys.left = false;
+            keys.right = false;
+        }, { passive: false });
+
+        document.getElementById('start-btn').addEventListener('click', () => {
+            document.getElementById('start-screen').style.display = 'none';
+            initAudio(); // Initialize Audio on first user interaction
+            startGame();
+        });
+
+        // --- Audio System (Web Audio API) ---
+        let audioCtx;
+        let bgmOscillator;
+        let bgmGain;
+        const noteFreqs = { 'C4': 261.63, 'D4': 293.66, 'E4': 329.63, 'F4': 349.23, 'G4': 392.00, 'A4': 440.00, 'B4': 493.88, 'C5': 523.25 };
+        const melody = ['E4', 'E4', 'E4', 'C4', 'E4', 'G4', null, 'C4', 'G4', 'E4', 'A4', 'B4', 'A4'];
+        let noteIndex = 0;
+        let bgmInterval;
+
+        function initAudio() {
+            if (audioCtx) return;
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new AudioContext();
+        }
+
+        function playTone(freq, type, duration, vol = 0.1) {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+
+            gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        }
+
+        function playBGM() {
+            if (!audioCtx) return;
+            bgmInterval = setInterval(() => {
+                if (!isRunning) {
+                    clearInterval(bgmInterval);
+                    return;
+                }
+                const note = melody[noteIndex % melody.length];
+                if (note) {
+                    playTone(noteFreqs[note], 'square', 0.2, 0.05); // low volume bgm
+                }
+                // bass line
+                if (noteIndex % 2 === 0) playTone(130.81, 'triangle', 0.2, 0.08); // C3
+
+                noteIndex++;
+            }, 300); // tempo
+        }
+
+        function playJumpSound() { playTone(440, 'sine', 0.15, 0.1); setTimeout(() => playTone(660, 'sine', 0.15, 0.1), 50); }
+        function playItemSound() { playTone(880, 'square', 0.1, 0.1); setTimeout(() => playTone(1100, 'square', 0.2, 0.1), 100); }
+        function playWinFanfare() {
+            // "빰-빠-라-밤~ 빰-빠-밤~" 스타일의 확실한 팡파르
+            const v = 0.25; // 볼륨 크게
+
+            // 빰 빠 라 (C5)
+            playTone(noteFreqs['C5'], 'sawtooth', 0.15, v);
+            setTimeout(() => playTone(noteFreqs['C5'], 'sawtooth', 0.15, v), 150);
+            setTimeout(() => playTone(noteFreqs['C5'], 'sawtooth', 0.15, v), 300);
+
+            // 밤~ (E5 길게)
+            setTimeout(() => playTone(noteFreqs['E5'], 'sawtooth', 0.4, v), 450);
+
+            // 쉬고
+            // 빰 빠 (G5)
+            setTimeout(() => playTone(noteFreqs['G5'], 'sawtooth', 0.15, v), 900);
+            setTimeout(() => playTone(noteFreqs['G5'], 'sawtooth', 0.15, v), 1050);
+
+            // 밤~~ (C6 아주 길게, 화음 포함)
+            setTimeout(() => playTone(noteFreqs['C6'], 'sawtooth', 1.0, v + 0.1), 1200);
+            setTimeout(() => playTone(noteFreqs['E6'], 'sawtooth', 1.0, v), 1200);
+        }
+
+        // --- Core Game Functions ---
+        function startGame() {
+            startTime = performance.now();
+            lastTime = performance.now();
+            isRunning = true;
+            noteIndex = 0;
+            playBGM();
+            // Jitter pencil filter effect
+            setInterval(() => { if (isRunning) turbulence.setAttribute('baseFrequency', (0.04 + Math.random() * 0.01).toFixed(4)); }, 150);
+            requestAnimationFrame(gameLoop);
+        }
+
+        function gameLoop(timestamp) {
+            if (!isRunning) return;
+
+            const dt = (timestamp - lastTime) / 1000;
+            lastTime = timestamp;
+            frames++;
+
+            updatePhysics();
+            updateGameWorld(timestamp);
+            updateAnimation();
+            updateUI();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        function updatePhysics() {
+            // Horizontal Movement
+            if (keys.left) player.x -= PLAYER_SPEED_X;
+            if (keys.right) player.x += PLAYER_SPEED_X;
+
+            // Constrain to screen width bounds (approximate 0 to 750)
+            if (player.x < 10) player.x = 10;
+            if (player.x > 740) player.x = 740;
+
+            // Vertical Movement (Jump)
+            if (player.isJumping) {
+                player.y += player.vy;
+                player.vy -= GRAVITY;
+                if (player.y <= 0) {
+                    player.y = 0;
+                    player.vy = 0;
+                    player.isJumping = false;
+                }
+            }
+            playerEl.style.bottom = `${20 + player.y}px`;
+            playerEl.style.left = `${player.x}px`;
+        }
+
+        function updateGameWorld(timestamp) {
+            distance += currentSpeed;
+
+            // Ground animation
+            groundEl.style.backgroundPositionX = `${-distance}px`;
+
+            // Spawn Cloud
+            if (frames % 120 === 0 && Math.random() > 0.4 && distance < TARGET_DISTANCE) {
+                spawnCloud();
+            }
+
+            // Spawn Items ("양해", "공감") - 정확히 6초당 1개 스폰
+            if (timestamp - lastItemSpawnTime > 6000 && distance < TARGET_DISTANCE - 1000) {
+                lastItemSpawnTime = timestamp;
+                spawnItem();
+            }
+
+            // Spawn Goal Condition
+            if (distance >= TARGET_DISTANCE && !endEventTriggered) {
+                endEventTriggered = true;
+                spawnGoal();
+            }
+
+            // Move all entities and check logic
+            for (let i = entities.length - 1; i >= 0; i--) {
+                let ent = entities[i];
+
+                // Move left based on current speed and parallax multiplier
+                ent.x -= currentSpeed * ent.speedMultiplier;
+                ent.el.style.left = `${ent.x}px`;
+
+                // Player Collision Check (for Items and Goal)
+                if (ent.type === 'item' && checkCollision(player, ent) && !ent.collected) {
+                    ent.collected = true;
+                    handleItemCollection(ent);
+                    ent.el.remove();
+                    entities.splice(i, 1);
+                    continue;
+                } else if (ent.type === 'goal' && checkCollision(player, ent)) {
+                    triggerWin();
+                    return;
+                }
+
+                // Remove off-screen entities
+                if (ent.x < -200) {
+                    ent.el.remove();
+                    entities.splice(i, 1);
+                }
+            }
+        }
+
+        function handleItemCollection(item) {
+            // Increase speed logic
+            currentSpeed = Math.min(MAX_SPEED, currentSpeed + 0.35);
+            playItemSound();
+
+            // Floating Text (Speed Up)
+            const floating = document.createElement('div');
+            floating.className = 'floating-text';
+            floating.style.left = `${item.x}px`;
+            floating.style.bottom = `${item.y + 60}px`;
+            floating.innerText = `+속도업!`;
+            entitiesContainer.appendChild(floating);
+            setTimeout(() => floating.remove(), 1000);
+
+            // Show Long Message in Bubble
+            if (item.message) {
+                messageBubble.innerText = item.message;
+                messageBubble.style.opacity = 1;
+
+                // Clear previous timeout if exists
+                if (window.msgTimeout) clearTimeout(window.msgTimeout);
+                window.msgTimeout = setTimeout(() => {
+                    messageBubble.style.opacity = 0;
+                }, 6000); // 6초간 긴 대사 표시
+            }
+        }
+
+        function checkCollision(p, e) {
+            const px = p.x;
+            const py = p.y;
+            const pw = p.width;
+            const ph = p.height;
+
+            // Adjust for padding visual buffer
+            const ex = e.x + 10;
+            const ey = e.y - 20; // e.y is bottom coordinate
+            const ew = e.width - 20;
+            const eh = e.height - 20;
+
+            return (px < ex + ew && px + pw > ex && py < ey + eh && py + ph > ey);
+        }
+
+        function updateAnimation() {
+            if (player.isJumping) return;
+
+            // Change frames faster if running faster
+            const animSpeed = Math.floor(frames / Math.max(8, (20 / (currentSpeed / 1.5))));
+            updatePose(animSpeed % 2 === 0);
+        }
+
+        function updatePose(isAlt) {
+            if (player.isJumping) {
+                umaSprite.className = 'pixel-uma jump';
+            } else {
+                if (isAlt) {
+                    umaSprite.className = 'pixel-uma run-1';
+                } else {
+                    umaSprite.className = 'pixel-uma run-2';
+                }
+            }
+        }
+
+        function updateUI() {
+            const prog = Math.min(100, Math.floor((distance / TARGET_DISTANCE) * 100));
+            progressVal.innerText = prog;
+            speedVal.innerText = (currentSpeed / BASE_SPEED).toFixed(1);
+        }
+
+        // --- Entity Spawning ---
+        function spawnItem() {
+            // 새로 입력해주신 긴 텍스트 배열
+            const empathyMessages = [
+                "정말 고생 많으셨겠네요. 얼마나 힘드셨을지 짐작이 갑니다.",
+                "충분히 그렇게 생각하실 수 있을 것 같아요. 깊이 공감합니다.",
+                "저라도 그런 상황이었다면 무척 당황했을 것 같아요. 마음이 쓰이시겠어요.",
+                "그동안 얼마나 애쓰셨는지 잘 느껴집니다. 그 노력이 대단하시네요."
+            ];
+            const understandingMessages = [
+                "너그러운 마음으로 잠시만 기다려 주시면 감사하겠습니다.",
+                "미리 일정을 조정하지 못해 대단히 죄송합니다. 양해해 주실 수 있을까요?",
+                "설명이 부족할 수 있는 점 미리 양해 부탁드립니다.",
+                "본의 아니게 불편을 드려 마음이 무겁습니다. 이해해 주시면 감사하겠습니다."
+            ];
+
+            const isEmpathy = Math.random() > 0.5;
+            const categoryWord = isEmpathy ? '공감' : '양해';
+            const messageArr = isEmpathy ? empathyMessages : understandingMessages;
+            const fullMessage = messageArr[Math.floor(Math.random() * messageArr.length)];
+
+            const el = document.createElement('div');
+            el.className = 'item';
+
+            // Random Y between jump height limits (approx. bottom 60 to 140)
+            const yPos = 60 + Math.random() * 80;
+            el.style.bottom = `${20 + yPos}px`;
+            el.style.left = '800px';
+
+            // Sketchy Bubble
+            el.innerHTML = `
+            <svg viewBox="0 0 100 100">
+                <path class="sketch-fill" d="M10,50 Q10,10 50,10 Q90,10 90,50 Q90,90 50,90 Q10,90 10,50 Z" />
+            </svg>
+            <span>${categoryWord}</span>
+        `;
+            entitiesContainer.appendChild(el);
+            entities.push({
+                type: 'item',
+                el: el,
+                x: 800,
+                y: yPos,
+                width: 60,
+                height: 60,
+                speedMultiplier: 1,
+                collected: false,
+                message: fullMessage // 긴 메시지 데이터 담기
+            });
+        }
+
+        function spawnCloud() {
+            const el = document.createElement('div');
+            el.className = 'cloud';
+            const yPos = 180 + Math.random() * 120;
+            const scale = 0.5 + Math.random() * 0.5;
+            el.style.bottom = `${yPos}px`;
+            el.style.left = '800px';
+            el.style.opacity = 0.5;
+            el.style.width = `${100 * scale}px`;
+            el.style.height = `${50 * scale}px`;
+
+            // Sketchy cloud vector
+            el.innerHTML = `
+            <svg viewBox="0 0 100 50">
+                <path class="sketch-stroke" d="M20,40 Q10,40 10,30 Q10,20 25,20 Q30,10 45,10 Q60,10 70,25 Q90,20 90,35 Q90,40 80,40 Z" />
+            </svg>
+        `;
+            bgContainer.appendChild(el);
+            // Clouds move slower (parallax)
+            entities.push({ type: 'cloud', el: el, x: 800, y: yPos, width: 100, height: 50, speedMultiplier: 0.3 + Math.random() * 0.3, collected: false });
+        }
+
+        function spawnGoal() {
+            const el = document.createElement('div');
+            el.id = 'goal';
+            el.style.left = '850px';
+
+            // Sketchy Trophy / Banner
+            el.innerHTML = `
+            <svg viewBox="0 0 120 160">
+                <!-- Pole -->
+                <path class="sketch-stroke" stroke-width="4" d="M20,150 L20,20" />
+                <!-- Flag banner -->
+                <path class="sketch-fill" d="M20,20 L110,40 L90,60 L110,80 L20,80 Z" fill="#ffd54f" />
+                <text x="50" y="55" font-size="16" font-weight="bold" fill="#2c3e50" class="sketch-stroke" stroke-width="0.5">고객</text>
+                <text x="50" y="75" font-size="16" font-weight="bold" fill="#2c3e50" class="sketch-stroke" stroke-width="0.5">만족</text>
+                <!-- Confetti base line -->
+                <path class="sketch-stroke" d="M0,150 L40,150" />
+            </svg>
+        `;
+            entitiesContainer.appendChild(el);
+            entities.push({ type: 'goal', el: el, x: 850, y: 0, width: 120, height: 160, speedMultiplier: 1, collected: false });
+        }
+
+        function triggerWin() {
+            isRunning = false;
+            clearInterval(bgmInterval); // Stop BGM
+            playWinFanfare(); // Play Win Sound
+
+            const totalTime = ((performance.now() - startTime) / 1000).toFixed(1);
+            document.getElementById('time-result').innerText = `소요 시간: ${totalTime}초`;
+            document.getElementById('win-screen').style.display = 'flex';
+
+            // Fire Confetti!
+            createConfetti();
+        }
+
+        function createConfetti() {
+            const container = document.getElementById('confetti-container');
+            const colors = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22'];
+
+            for (let i = 0; i < 150; i++) {
+                const conf = document.createElement('div');
+                conf.className = 'confetti';
+
+                // Random properties for each particle
+                const xPos = Math.random() * 100; // 0 to 100 vw
+                const delay = Math.random() * 2; // spawn delay
+                const duration = 2.5 + Math.random() * 3; // fall duration
+                const bg = colors[Math.floor(Math.random() * colors.length)];
+
+                // Random width/height for shape variety (rectangles, squares)
+                const w = 5 + Math.random() * 10;
+                const h = 5 + Math.random() * 15;
+
+                conf.style.left = `${xPos}%`;
+                conf.style.top = `-20px`;
+                conf.style.backgroundColor = bg;
+                conf.style.width = `${w}px`;
+                conf.style.height = `${h}px`;
+
+                // Keyframe generation via JS for performance and variety
+                const animName = `fall-${i}`;
+                const xForce = (Math.random() - 0.5) * 200; // side drift
+                const rot = Math.random() * 720; // 0 to 720 deg
+
+                const style = document.createElement('style');
+                style.innerHTML = `
+                    @keyframes ${animName} {
+                        0% { transform: translate3d(0, 0, 0) rotate(0deg); opacity: 1; }
+                        100% { transform: translate3d(${xForce}px, 600px, 0) rotate(${rot}deg); opacity: 0; }
+                    }
+                `;
+                document.head.appendChild(style);
+
+                conf.style.animation = `${animName} ${duration}s ${delay}s ease-in forwards`;
+
+                container.appendChild(conf);
+            }
+        }
+
+    </script>
+</body>
+
+</html>
