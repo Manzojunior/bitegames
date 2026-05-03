@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>다람쥐의 쳇바퀴 30초 도전 (Squirrel Wheel)</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body, html {
+    width: 100%; height: 100%; overflow: hidden;
+    font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+    background: #1a1a2e;
+    display: flex; justify-content: center; align-items: center;
+    touch-action: none; user-select: none;
+  }
+  #game {
+    position: relative;
+    width: 100%; max-width: 480px;
+    height: 720px; max-height: 100vh;
+    background: linear-gradient(180deg, #2c3e50 0%, #34495e 60%, #1a1a2e 100%);
+    overflow: hidden;
+    border: 4px solid #f1c40f;
+    border-radius: 12px;
+    box-shadow: 0 0 40px rgba(241, 196, 15, 0.3);
+  }
+
+  /* HUD */
+  #hud {
+    position: absolute; top: 16px; left: 16px; right: 16px;
+    z-index: 20; display: flex; justify-content: space-between;
+    color: #fff; font-weight: 900;
+    text-shadow: 2px 2px 0 #000;
+  }
+  .hud-card {
+    background: rgba(0,0,0,0.5);
+    padding: 8px 14px;
+    border: 2px solid #f1c40f;
+    border-radius: 8px;
+  }
+  .hud-card .label { font-size: 10px; opacity: 0.7; }
+  .hud-card .value { font-size: 24px; color: #f1c40f; }
+
+  /* Wheel */
+  #wheel-container {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 360px; height: 360px;
+  }
+  #wheel {
+    width: 100%; height: 100%;
+    position: relative;
+    will-change: transform;
+  }
+  #wheel svg { width: 100%; height: 100%; }
+  /* spokes */
+  .spoke { stroke: #d4a574; stroke-width: 8; }
+  .frame-outer { stroke: #8b5a2b; stroke-width: 12; fill: none; }
+  .frame-inner { stroke: #6f3f1a; stroke-width: 4; fill: none; }
+  .grip { fill: #5a3315; }
+
+  /* Marker — fixed, doesn't rotate */
+  #marker {
+    position: absolute;
+    top: -6px; left: 50%;
+    transform: translateX(-50%);
+    width: 0; height: 0;
+    border-left: 18px solid transparent;
+    border-right: 18px solid transparent;
+    border-top: 28px solid #e74c3c;
+    z-index: 5;
+    filter: drop-shadow(0 0 8px #e74c3c);
+  }
+  /* Target zone arc — fixed at top */
+  #target-zone {
+    position: absolute;
+    top: 0; left: 50%;
+    transform: translateX(-50%);
+    width: 90px; height: 50px;
+    border-top: 4px solid rgba(241,196,15,0.6);
+    border-left: 4px solid rgba(241,196,15,0.6);
+    border-right: 4px solid rgba(241,196,15,0.6);
+    border-radius: 50% 50% 0 0;
+    pointer-events: none;
+    z-index: 4;
+  }
+
+  /* Squirrel inside wheel — rotates with wheel */
+  #squirrel {
+    position: absolute;
+    bottom: 36px; left: 50%;
+    transform: translateX(-50%);
+    width: 64px; height: 64px;
+    z-index: 6;
+    pointer-events: none;
+  }
+  #squirrel img {
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 100%; image-rendering: pixelated;
+    transform: scaleX(-1); /* face right (toward direction of motion) */
+  }
+
+  /* Floating feedback text */
+  .feedback {
+    position: absolute;
+    left: 50%; top: 35%;
+    transform: translateX(-50%) translateY(0);
+    font-size: 56px; font-weight: 900;
+    z-index: 15;
+    pointer-events: none;
+    text-shadow: 4px 4px 0 #000;
+    animation: feedbackUp 0.9s ease-out forwards;
+    white-space: nowrap;
+  }
+  @keyframes feedbackUp {
+    0% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+    50% { transform: translateX(-50%) translateY(-30px) scale(1.2); }
+    100% { opacity: 0; transform: translateX(-50%) translateY(-100px) scale(0.9); }
+  }
+  .fb-perfect { color: #f1c40f; }
+  .fb-great { color: #2ecc71; }
+  .fb-good { color: #3498db; }
+  .fb-miss { color: #e74c3c; }
+
+  /* Combo */
+  #combo {
+    position: absolute;
+    top: 90px; left: 50%;
+    transform: translateX(-50%);
+    color: #f39c12;
+    font-size: 24px; font-weight: 900;
+    text-shadow: 2px 2px 0 #000;
+    z-index: 15;
+    opacity: 0;
+    transition: opacity .2s;
+    pointer-events: none;
+  }
+  #combo.visible { opacity: 1; }
+
+  /* Acorns counter */
+  #acorns {
+    position: absolute;
+    bottom: 50px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    font-size: 28px;
+    color: #f1c40f;
+    font-weight: 900;
+    text-shadow: 2px 2px 0 #000;
+    pointer-events: none;
+  }
+
+  /* Action button */
+  #stop-btn {
+    position: absolute;
+    bottom: 30px; left: 50%;
+    transform: translateX(-50%);
+    width: 220px; height: 70px;
+    background: #e74c3c;
+    color: #fff;
+    border: 4px solid #fff;
+    border-radius: 12px;
+    font-size: 32px; font-weight: 900;
+    cursor: pointer;
+    box-shadow: 0 6px 0 #c0392b;
+    transition: all .1s;
+    user-select: none;
+    z-index: 12;
+  }
+  #stop-btn:active {
+    transform: translateX(-50%) translateY(4px);
+    box-shadow: 0 2px 0 #c0392b;
+  }
+
+  /* Screen overlays */
+  .screen {
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0,0,0,0.85);
+    z-index: 30;
+    display: flex; flex-direction: column;
+    justify-content: center; align-items: center;
+    text-align: center; padding: 30px;
+  }
+  .screen h1 {
+    color: #f1c40f;
+    font-size: 36px; margin-bottom: 16px;
+    text-shadow: 4px 4px 0 #000;
+  }
+  .screen p {
+    color: #fff;
+    font-size: 16px;
+    margin: 6px 0;
+    line-height: 1.5;
+  }
+  .screen strong { color: #f39c12; }
+  .screen button {
+    margin-top: 24px;
+    padding: 14px 32px;
+    font-size: 22px; font-weight: 900;
+    background: #f1c40f;
+    color: #1a1a2e;
+    border: 4px solid #fff;
+    border-radius: 12px;
+    cursor: pointer;
+    box-shadow: 0 6px 0 #b8860b;
+  }
+  .screen button:active {
+    transform: translateY(4px);
+    box-shadow: 0 2px 0 #b8860b;
+  }
+
+  #end-screen { display: none; }
+  #end-screen .stat-row {
+    display: flex; justify-content: space-between;
+    width: 280px;
+    color: #fff; font-size: 18px;
+    margin: 4px 0;
+    border-bottom: 1px dashed rgba(255,255,255,0.3);
+    padding: 4px 0;
+  }
+  #end-screen .stat-row .v { color: #f1c40f; font-weight: 900; }
+</style>
+</head>
+<body>
+  <div id="game">
+    <!-- HUD -->
+    <div id="hud">
+      <div class="hud-card">
+        <div class="label">시간</div>
+        <div class="value" id="time-val">30</div>
+      </div>
+      <div class="hud-card">
+        <div class="label">점수</div>
+        <div class="value" id="score-val">0</div>
+      </div>
+    </div>
+
+    <!-- Wheel -->
+    <div id="wheel-container">
+      <div id="marker"></div>
+      <div id="target-zone"></div>
+      <div id="wheel">
+        <svg viewBox="-180 -180 360 360">
+          <!-- outer frame -->
+          <circle class="frame-outer" cx="0" cy="0" r="160"/>
+          <circle class="frame-inner" cx="0" cy="0" r="130"/>
+          <!-- spokes (8) -->
+          <line class="spoke" x1="-160" y1="0" x2="160" y2="0"/>
+          <line class="spoke" x1="0" y1="-160" x2="0" y2="160"/>
+          <line class="spoke" x1="-113" y1="-113" x2="113" y2="113"/>
+          <line class="spoke" x1="-113" y1="113" x2="113" y2="-113"/>
+          <!-- grip dots on outer ring -->
+          <circle class="grip" cx="0" cy="-160" r="6"/>
+          <circle class="grip" cx="113" cy="-113" r="6"/>
+          <circle class="grip" cx="160" cy="0" r="6"/>
+          <circle class="grip" cx="113" cy="113" r="6"/>
+          <circle class="grip" cx="0" cy="160" r="6"/>
+          <circle class="grip" cx="-113" cy="113" r="6"/>
+          <circle class="grip" cx="-160" cy="0" r="6"/>
+          <circle class="grip" cx="-113" cy="-113" r="6"/>
+        </svg>
+        <!-- squirrel inside wheel — PixelLab pixel art -->
+        <div id="squirrel">
+          <img id="squirrel-frame-0" src="data:image/png;base64,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" alt="squirrel" style="display:block;">
+          <img id="squirrel-frame-1" src="data:image/png;base64,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" alt="squirrel" style="display:none;">
+        </div>
+      </div>
+    </div>
+
+    <!-- Combo -->
+    <div id="combo">콤보 ×0</div>
+    <!-- Acorns -->
+    <div id="acorns">🌰 ×0</div>
+
+    <!-- Stop button -->
+    <button id="stop-btn">멈춰!</button>
+
+    <!-- Start screen -->
+    <div class="screen" id="start-screen">
+      <h1>🐿️ 다람쥐의 쳇바퀴 30초 도전</h1>
+      <p><strong>'대리급 다람쥐'</strong>의 일상 — 끝없는 쳇바퀴.</p>
+      <p>30초 동안 빨간 마커에 맞춰 쳇바퀴 멈추기!</p>
+      <p>⭐ <strong>PERFECT</strong> = 100점 + 콤보</p>
+      <p>⚪ <strong>GREAT</strong> = 50점</p>
+      <p>🔵 <strong>GOOD</strong> = 20점</p>
+      <p>❌ <strong>MISS</strong> = 콤보 끊김</p>
+      <p style="margin-top:16px;">조작: <strong>스페이스바</strong> 또는 <strong>멈춰! 버튼</strong></p>
+      <p style="font-size:13px; opacity:0.7; margin-top:12px;">각오는 단단히 — 30초만 더... 30초만 더...</p>
+      <button id="start-btn">출근하기</button>
+    </div>
+
+    <!-- End screen -->
+    <div class="screen" id="end-screen">
+      <h1 id="end-title">🏆 퇴근 완료!</h1>
+      <div class="stat-row"><span>최종 점수</span><span class="v" id="final-score">0</span></div>
+      <div class="stat-row"><span>최고 콤보</span><span class="v" id="final-combo">0</span></div>
+      <div class="stat-row"><span>PERFECT</span><span class="v" id="final-perfect">0</span></div>
+      <div class="stat-row"><span>GREAT</span><span class="v" id="final-great">0</span></div>
+      <div class="stat-row"><span>GOOD</span><span class="v" id="final-good">0</span></div>
+      <div class="stat-row"><span>MISS</span><span class="v" id="final-miss">0</span></div>
+      <p id="end-msg" style="margin-top:16px; max-width:300px; color:#f39c12;"></p>
+      <button onclick="location.reload()">다시 출근</button>
+    </div>
+  </div>
+
+<script>
+// ==== Config ====
+const ROUND_DURATION = 30; // seconds
+const TARGET_RANGE_PERFECT = 5;   // ±5 deg
+const TARGET_RANGE_GREAT = 15;
+const TARGET_RANGE_GOOD = 30;
+// Wheel rotates clockwise. Marker at top = angle 0.
+// We track wheel rotation in degrees (continuous), modulo 360.
+
+// ==== State ====
+let isRunning = false;
+let score = 0;
+let combo = 0;
+let maxCombo = 0;
+let counts = { perfect: 0, great: 0, good: 0, miss: 0 };
+let speed = 220; // deg per second initial
+let wheelAngle = 0;
+let lastTime = 0;
+let timeLeft = ROUND_DURATION;
+let canStop = false; // requires release between presses
+
+// ==== DOM ====
+const wheelEl = document.getElementById('wheel');
+const scoreVal = document.getElementById('score-val');
+const timeVal = document.getElementById('time-val');
+const acornsEl = document.getElementById('acorns');
+const comboEl = document.getElementById('combo');
+const stopBtn = document.getElementById('stop-btn');
+const startBtn = document.getElementById('start-btn');
+const startScreen = document.getElementById('start-screen');
+const endScreen = document.getElementById('end-screen');
+const gameEl = document.getElementById('game');
+
+// ==== Audio ====
+let audioCtx;
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+function tone(freq, type, dur, vol = 0.1) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+  gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + dur);
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  osc.start(); osc.stop(audioCtx.currentTime + dur);
+}
+function sfxPerfect() {
+  tone(880, 'square', 0.08, 0.15);
+  setTimeout(() => tone(1320, 'square', 0.12, 0.15), 60);
+  setTimeout(() => tone(1760, 'square', 0.18, 0.12), 130);
+}
+function sfxGreat() { tone(660, 'square', 0.1, 0.12); setTimeout(() => tone(990, 'square', 0.12, 0.1), 60); }
+function sfxGood() { tone(440, 'square', 0.1, 0.1); }
+function sfxMiss() { tone(180, 'sawtooth', 0.25, 0.1); }
+function sfxTick() { tone(2000, 'square', 0.04, 0.05); }
+
+// ==== Game logic ====
+function start() {
+  isRunning = true;
+  score = 0; combo = 0; maxCombo = 0;
+  counts = { perfect: 0, great: 0, good: 0, miss: 0 };
+  speed = 220;
+  wheelAngle = 0;
+  timeLeft = ROUND_DURATION;
+  lastTime = performance.now();
+  canStop = true;
+  startScreen.style.display = 'none';
+  scoreVal.textContent = '0';
+  timeVal.textContent = ROUND_DURATION;
+  acornsEl.textContent = '🌰 ×0';
+  requestAnimationFrame(loop);
+}
+
+function loop(now) {
+  if (!isRunning) return;
+  const dt = (now - lastTime) / 1000;
+  lastTime = now;
+
+  // Update wheel rotation (clockwise)
+  wheelAngle = (wheelAngle + speed * dt) % 360;
+  wheelEl.style.transform = `rotate(${wheelAngle}deg)`;
+  tickSquirrelAnim(dt);
+
+  // Update timer
+  timeLeft -= dt;
+  if (timeLeft <= 0) {
+    end();
+    return;
+  }
+  timeVal.textContent = Math.ceil(timeLeft);
+
+  // Tick sound at last 5 seconds
+  if (timeLeft < 5 && Math.floor(timeLeft) !== Math.floor(timeLeft + dt)) {
+    sfxTick();
+  }
+
+  requestAnimationFrame(loop);
+}
+
+function tryStop() {
+  if (!isRunning || !canStop) return;
+  canStop = false;
+  setTimeout(() => { canStop = true; }, 250);
+
+  // Compute distance to top (angle 0, wrapped)
+  // Wheel rotated by wheelAngle clockwise — marker at top.
+  // Distance from "top" considering wrap: min(angle, 360 - angle).
+  let dist = wheelAngle % 360;
+  if (dist > 180) dist = 360 - dist;
+
+  let result, points;
+  if (dist <= TARGET_RANGE_PERFECT) {
+    result = 'PERFECT'; points = 100;
+    counts.perfect++; combo++;
+    sfxPerfect();
+  } else if (dist <= TARGET_RANGE_GREAT) {
+    result = 'GREAT'; points = 50;
+    counts.great++; combo++;
+    sfxGreat();
+  } else if (dist <= TARGET_RANGE_GOOD) {
+    result = 'GOOD'; points = 20;
+    counts.good++; combo++;
+    sfxGood();
+  } else {
+    result = 'MISS'; points = 0;
+    counts.miss++;
+    combo = 0;
+    sfxMiss();
+  }
+
+  // Combo multiplier
+  let multiplier = 1;
+  if (combo >= 5) multiplier = 2;
+  else if (combo >= 3) multiplier = 1.5;
+  const earned = Math.floor(points * multiplier);
+  score += earned;
+
+  if (combo > maxCombo) maxCombo = combo;
+
+  // Update UI
+  scoreVal.textContent = score;
+  acornsEl.textContent = `🌰 ×${counts.perfect + counts.great + counts.good}`;
+  if (combo >= 2) {
+    comboEl.textContent = multiplier > 1 ? `콤보 ×${combo} (${multiplier}x)` : `콤보 ×${combo}`;
+    comboEl.classList.add('visible');
+  } else {
+    comboEl.classList.remove('visible');
+  }
+
+  // Floating text
+  showFeedback(result, earned);
+
+  // Speed up wheel (gradual)
+  if (result !== 'MISS') {
+    speed = Math.min(540, speed + 12);
+  }
+}
+
+function showFeedback(text, earned) {
+  const fb = document.createElement('div');
+  fb.className = 'feedback fb-' + text.toLowerCase();
+  if (earned > 0) fb.textContent = `${text} +${earned}`;
+  else fb.textContent = text;
+  gameEl.appendChild(fb);
+  setTimeout(() => fb.remove(), 900);
+}
+
+function end() {
+  isRunning = false;
+  document.getElementById('final-score').textContent = score;
+  document.getElementById('final-combo').textContent = maxCombo;
+  document.getElementById('final-perfect').textContent = counts.perfect;
+  document.getElementById('final-great').textContent = counts.great;
+  document.getElementById('final-good').textContent = counts.good;
+  document.getElementById('final-miss').textContent = counts.miss;
+
+  let msg = "고생했어요... 내일도 출근입니다 🐿️";
+  if (score >= 3000) msg = "🏆 전설의 다람쥐! 이 정도면 대리 → 과장 승진감";
+  else if (score >= 2000) msg = "👏 베테랑 다람쥐. 이번 분기 성과급 확정";
+  else if (score >= 1000) msg = "👍 평균 이상. 야근은 면제";
+  else if (score >= 500) msg = "😅 평타. 내일도 같은 시간 같은 쳇바퀴";
+  else msg = "💀 권고사직 후보. 30초만 더... 30초만 더...";
+  document.getElementById('end-msg').textContent = msg;
+
+  endScreen.style.display = 'flex';
+}
+
+// ==== Input ====
+document.addEventListener('keydown', (e) => {
+  if (e.code === 'Space' || e.code === 'ArrowDown') {
+    e.preventDefault();
+    if (!isRunning && startScreen.style.display !== 'none') {
+      initAudio(); start();
+    } else {
+      tryStop();
+    }
+  }
+});
+
+stopBtn.addEventListener('click', () => { tryStop(); });
+stopBtn.addEventListener('touchstart', (e) => { e.preventDefault(); tryStop(); }, { passive: false });
+
+startBtn.addEventListener('click', () => { initAudio(); start(); });
+
+// PixelLab squirrel image — try to load if available
+// (will be set when integrated; for now, fallback CSS shape used)
+
+// Squirrel running animation — toggle frames at speed-based rate
+let frameIdx = 0;
+let frameElapsed = 0;
+function tickSquirrelAnim(dt) {
+  if (!isRunning) return;
+  // frame rate scales with wheel speed (faster = faster legs)
+  const interval = Math.max(0.06, 0.18 - speed * 0.0002);
+  frameElapsed += dt;
+  if (frameElapsed >= interval) {
+    frameElapsed = 0;
+    frameIdx = 1 - frameIdx;
+    document.getElementById('squirrel-frame-0').style.display = frameIdx === 0 ? 'block' : 'none';
+    document.getElementById('squirrel-frame-1').style.display = frameIdx === 1 ? 'block' : 'none';
+  }
+}
+// Hook into loop
+</script>
+</body>
+</html>
