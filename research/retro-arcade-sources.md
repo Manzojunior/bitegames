@@ -224,7 +224,7 @@
 
 ### 3-2. udacity/frontend-nanodegree-arcade-game
 
-<img src="img/frontend-nanodegree-arcade-game.png" alt="frontend-nanodegree-arcade-game 게임 화면" width="420">
+> 게임 화면: 헤드리스 브라우저 실행 캡처 불가 (엔진 로딩 이슈)
 
 | 항목 | 내용 |
 |------|------|
