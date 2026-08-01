@@ -22,6 +22,8 @@
 
 ### 1-1. jakesgordon/javascript-tetris
 
+<img src="img/javascript-tetris.png" alt="javascript-tetris 게임 화면" width="420">
+
 | 항목 | 내용 |
 |------|------|
 | **게임 이름** | JavaScript Tetris |
@@ -37,6 +39,8 @@
 ---
 
 ### 1-2. notsoround/tetris-2026
+
+<img src="img/tetris-2026.png" alt="tetris-2026 게임 화면" width="420">
 
 | 항목 | 내용 |
 |------|------|
@@ -54,6 +58,8 @@
 
 ### 1-3. dionyziz/canvas-tetris
 
+<img src="img/canvas-tetris.png" alt="canvas-tetris 게임 화면" width="420">
+
 | 항목 | 내용 |
 |------|------|
 | **게임 이름** | Canvas Tetris |
@@ -69,6 +75,8 @@
 ---
 
 ### 1-4. gabrielecirulli/2048
+
+<img src="img/2048.png" alt="2048 게임 화면" width="420">
 
 | 항목 | 내용 |
 |------|------|
@@ -86,6 +94,8 @@
 
 ### 1-5. n-nagmn/puyo_mobile
 
+<img src="img/puyo_mobile.png" alt="puyo_mobile 게임 화면" width="420">
+
 | 항목 | 내용 |
 |------|------|
 | **게임 이름** | Puyo Mobile |
@@ -101,6 +111,8 @@
 ---
 
 ### 1-6. shjang1007/puyo-puyo
+
+<img src="img/puyo-puyo.gif" alt="puyo-puyo 게임 화면" width="420">
 
 | 항목 | 내용 |
 |------|------|
@@ -120,6 +132,8 @@
 
 ### 2-1. hoorayimhelping/Galaga5
 
+<img src="img/galaga5.png" alt="Galaga5 게임 화면" width="420">
+
 | 항목 | 내용 |
 |------|------|
 | **게임 이름** | Galaga5 |
@@ -135,6 +149,8 @@
 ---
 
 ### 2-2. jwilliams219/galaga
+
+<img src="img/galaga.png" alt="galaga 게임 화면" width="420">
 
 | 항목 | 내용 |
 |------|------|
@@ -152,6 +168,8 @@
 
 ### 2-3. DavidHMoura/space-invaders-arcade
 
+<img src="img/space-invaders-arcade.png" alt="space-invaders-arcade 게임 화면" width="420">
+
 | 항목 | 내용 |
 |------|------|
 | **게임 이름** | Space Invaders Arcade |
@@ -167,6 +185,8 @@
 ---
 
 ### 2-4. stefanmiroiu/Asteroids-Game
+
+<img src="img/asteroids-game.png" alt="Asteroids-Game 게임 화면" width="420">
 
 | 항목 | 내용 |
 |------|------|
@@ -186,6 +206,8 @@
 
 ### 3-1. nebez/floppybird
 
+<img src="img/floppybird.png" alt="floppybird 게임 화면" width="420">
+
 | 항목 | 내용 |
 |------|------|
 | **게임 이름** | Floppy Bird |
@@ -202,6 +224,8 @@
 
 ### 3-2. udacity/frontend-nanodegree-arcade-game
 
+<img src="img/frontend-nanodegree-arcade-game.png" alt="frontend-nanodegree-arcade-game 게임 화면" width="420">
+
 | 항목 | 내용 |
 |------|------|
 | **게임 이름** | Frogger-Style Arcade Game |
@@ -217,6 +241,8 @@
 ---
 
 ### 3-3. RadianDev01/donkey-kong-game
+
+<img src="img/donkey-kong-game.png" alt="donkey-kong-game 게임 화면" width="420">
 
 | 항목 | 내용 |
 |------|------|
@@ -236,6 +262,8 @@
 
 ### 4-1. drewhamlett/DoubleDragon
 
+> 게임 화면: 헤드리스 브라우저 실행 캡처 불가 (엔진 로딩 이슈)
+
 | 항목 | 내용 |
 |------|------|
 | **게임 이름** | Double Dragon (HTML5) |
@@ -251,6 +279,8 @@
 ---
 
 ### 4-2. DCurrent/openbor
+
+<img src="img/openbor.jpg" alt="openbor 게임 화면" width="420">
 
 | 항목 | 내용 |
 |------|------|
@@ -270,6 +300,8 @@
 
 ### 5-1. masonicGIT/pacman
 
+<img src="img/pacman.png" alt="pacman 게임 화면" width="420">
+
 | 항목 | 내용 |
 |------|------|
 | **게임 이름** | Pac-Man |
@@ -285,6 +317,8 @@
 ---
 
 ### 5-2. devferx/arkanoid-js
+
+<img src="img/arkanoid-js.png" alt="arkanoid-js 게임 화면" width="420">
 
 | 항목 | 내용 |
 |------|------|
@@ -302,6 +336,8 @@
 
 ### 5-3. MichaelKS123/Brick-Breaker
 
+<img src="img/brick-breaker.png" alt="Brick-Breaker 게임 화면" width="420">
+
 | 항목 | 내용 |
 |------|------|
 | **게임 이름** | Brick Breaker |
@@ -317,6 +353,8 @@
 ---
 
 ### 5-4. codewithsadee/Snake-Game
+
+<img src="img/snake-game.png" alt="Snake-Game 게임 화면" width="420">
 
 | 항목 | 내용 |
 |------|------|
@@ -340,6 +378,8 @@
 
 ### [별도] robertkleffner/mariohtml5
 
+<img src="img/mariohtml5.png" alt="mariohtml5 게임 화면" width="420">
+
 | 항목 | 내용 |
 |------|------|
 | **게임 이름** | Infinite Mario HTML5 |
@@ -356,6 +396,8 @@
 ---
 
 ### [별도] ikhattab/space-invaders (CoffeeScript)
+
+<img src="img/space-invaders.png" alt="space-invaders 게임 화면" width="420">
 
 | 항목 | 내용 |
 |------|------|
