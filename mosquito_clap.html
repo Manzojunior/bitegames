@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>짝! · 한여름 밤의 모기 사냥</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { height:100%; background:#07090d; overflow:hidden;
+    font-family:-apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
+  #wrap { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
+  canvas { display:block; touch-action:none; cursor:none; background:#0a0d13; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="cv"></canvas></div>
+<script>
+"use strict";
+
+/* ── 화면 ──────────────────────────────────────────────
+   세로 9:16 고정. 이 비율 그대로 숏츠로 녹화한다.        */
+const W = 1080, H = 1920;
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d", { alpha:false });
+
+function fit() {
+  const s = Math.min(innerWidth / W, innerHeight / H);
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  cv.style.width = Math.round(W * s) + "px"; cv.style.height = Math.round(H * s) + "px";
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+addEventListener("resize", fit); fit();
+
+const rand = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const TAU = Math.PI * 2;
+
+/* ── 소리 ──────────────────────────────────────────────
+   에셋 파일 없이 Web Audio 로 만든다. 모기 날갯소리는
+   600Hz 사인 + 비브라토, 손뼉은 짧은 노이즈 버스트.      */
+let AC = null, master = null, whineGain = null, soundOn = true;
+function audioInit() {
+  if (AC) return;
+  AC = new (window.AudioContext || window.webkitAudioContext)();
+  master = AC.createGain(); master.gain.value = 0.5; master.connect(AC.destination);
+
+  // 모기 날갯소리 — 살아있는 모기 수에 따라 음량이 오른다
+  const osc = AC.createOscillator(), vib = AC.createOscillator(), vibG = AC.createGain();
+  osc.type = "sawtooth"; osc.frequency.value = 620;
+  vib.frequency.value = 7; vibG.gain.value = 26;
+  vib.connect(vibG); vibG.connect(osc.frequency);
+  const lp = AC.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1800;
+  whineGain = AC.createGain(); whineGain.gain.value = 0;
+  osc.connect(lp); lp.connect(whineGain); whineGain.connect(master);
+  osc.start(); vib.start();
+}
+function noiseBurst(dur, freq, gain) {
+  if (!AC || !soundOn) return;
+  const n = Math.floor(AC.sampleRate * dur);
+  const buf = AC.createBuffer(1, n, AC.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 2.2);
+  const src = AC.createBufferSource(); src.buffer = buf;
+  const bp = AC.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = freq; bp.Q.value = 0.8;
+  const g = AC.createGain(); g.gain.value = gain;
+  src.connect(bp); bp.connect(g); g.connect(master); src.start();
+}
+function tone(freq, dur, gain, type) {
+  if (!AC || !soundOn) return;
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.type = type || "triangle"; o.frequency.value = freq;
+  g.gain.setValueAtTime(gain, AC.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.0001, AC.currentTime + dur);
+  o.connect(g); g.connect(master); o.start(); o.stop(AC.currentTime + dur);
+}
+const sfx = {
+  clap:  () => noiseBurst(0.09, 2200, 0.55),
+  hit:   n => { noiseBurst(0.06, 900, 0.4); tone(320 + n * 60, 0.16, 0.16, "square"); },
+  miss:  () => noiseBurst(0.16, 300, 0.22),
+  bite:  () => { tone(160, 0.28, 0.3, "sawtooth"); },
+  wave:  () => { tone(520, 0.16, 0.16); setTimeout(() => tone(780, 0.22, 0.16), 130); },
+  over:  () => { tone(300, 0.4, 0.22, "sawtooth"); setTimeout(() => tone(180, 0.7, 0.22, "sawtooth"), 220); },
+};
+
+/* ── 상태 ─────────────────────────────────────────────*/
+const ST = { TITLE:0, PLAY:1, OVER:2 };
+let state = ST.TITLE;
+
+const palm = { x: W / 2, y: H * 0.68, tx: W / 2, ty: H * 0.68, r: 132, still: 0, clapT: -9 };
+let bugs = [], parts = [], floats = [], welts = [];
+let score = 0, combo = 0, bestCombo = 0, bites = 0, wave = 1, waveT = 0, spawnT = 0;
+let shake = 0, flash = 0, elapsed = 0;
+
+const BITE_MAX = 3;
+const HOLD_FULL = 1.25;          // 이만큼 멈춰 있으면 반경 최대
+const R_MIN = 118, R_MAX = 262;
+const BITE_R = 66;               // 물리는 거리는 손 크기 고정 — 사거리와 분리한다
+const BITE_HOLD = 0.5;           // 이만큼 손 위에 붙어 있어야 문다(피할 시간을 준다)
+
+const best = () => +(localStorage.getItem("clap_best") || 0);
+const setBest = v => localStorage.setItem("clap_best", v);
+const todayKey = () => "clap_day_" + new Date().toISOString().slice(0, 10);
+const todayCount = () => +(localStorage.getItem(todayKey()) || 0);
+const bumpToday = () => localStorage.setItem(todayKey(), todayCount() + 1);
+const DAILY_GOAL = 3;
+
+/* 등급 — 다시 켤 이유를 하나 만든다 */
+const RANKS = [[0,"초보 손바닥"],[1500,"눈썰미"],[4000,"모기채 장인"],[9000,"한밤의 포식자"],[18000,"모기 도사"]];
+const rankOf = s => { let r = RANKS[0][1]; for (const [t, n] of RANKS) if (s >= t) r = n; return r; };
+
+/* ── 모기 ─────────────────────────────────────────────*/
+function spawnBug(boss) {
+  const edge = Math.floor(rand(0, 4));
+  let x, y;
+  if (edge === 0) { x = rand(60, W - 60); y = -40; }
+  else if (edge === 1) { x = W + 40; y = rand(120, H * 0.85); }
+  else if (edge === 2) { x = rand(60, W - 60); y = H * 0.92 + 40; }
+  else { x = -40; y = rand(120, H * 0.85); }
+  bugs.push({
+    x, y, boss: !!boss,
+    hp: boss ? 3 : 1,
+    a: rand(0, TAU),
+    sp: boss ? rand(105, 130) : rand(140, 175) + wave * 7,
+    turn: rand(1.6, 3.4),
+    ph: rand(0, TAU),
+    fed: 0,                 // 물면 배가 불러 느려지고 점수가 커진다
+    lock: 0, dead: 0,
+    biteCd: rand(3.2, 6.0),
+    near: 0,
+    r: boss ? 30 : 17,
+  });
+}
+
+function bugScore(b) { return Math.round((b.boss ? 400 : 100) * (1 + b.fed * 0.9)); }
+
+/* ── 입력 ─────────────────────────────────────────────*/
+function toLocal(e) {
+  const r = cv.getBoundingClientRect();
+  return { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H };
+}
+let dragging = false;
+cv.addEventListener("pointerdown", e => {
+  e.preventDefault(); audioInit(); if (AC.state === "suspended") AC.resume();
+  const p = toLocal(e);
+  if (state === ST.TITLE) { if (hitBtn(p, titleBtn)) startGame(); else if (hitBtn(p, soundBtn)) toggleSound(); return; }
+  if (state === ST.OVER)  { if (hitBtn(p, overBtn)) startGame(); return; }
+  dragging = true; palm.tx = p.x; palm.ty = p.y; cv.setPointerCapture(e.pointerId);
+});
+cv.addEventListener("pointermove", e => {
+  if (!dragging) return;
+  const p = toLocal(e); palm.tx = p.x; palm.ty = p.y;
+});
+cv.addEventListener("pointerup", e => {
+  if (state === ST.PLAY && dragging) clap();
+  dragging = false;
+});
+addEventListener("keydown", e => {
+  if (e.code === "Space" || e.code === "Enter") {
+    e.preventDefault(); audioInit(); if (AC.state === "suspended") AC.resume();
+    if (state === ST.PLAY) clap(); else startGame();
+  }
+});
+
+function toggleSound() { soundOn = !soundOn; if (master) master.gain.value = soundOn ? 0.5 : 0; }
+
+/* ── 손뼉 ─────────────────────────────────────────────
+   락온된 모기가 없는데 치면 헛손질이다 — 콤보가 끊기고
+   주변 모기가 흩어진다. "언제 치느냐"가 이 게임이다.     */
+function clap() {
+  palm.clapT = elapsed;
+  sfx.clap();
+  const caught = bugs.filter(b => !b.dead && b.lock > 0.55);
+  if (!caught.length) {
+    combo = 0; shake = Math.max(shake, 7);
+    sfx.miss();
+    pushFloat({ x: palm.x, y: palm.y - 70, t: 0, txt: "헛손질", c: "#ff6b6b", s: 46 });
+    for (const b of bugs) {                       // 놀라서 달아난다
+      const dx = b.x - palm.x, dy = b.y - palm.y, d = Math.hypot(dx, dy) || 1;
+      if (d < palm.r * 2.1) { b.a = Math.atan2(dy, dx); b.sp *= 1.55; b.lock = 0; }
+    }
+    palm.still = 0;
+    return;
+  }
+  let gained = 0;
+  caught.sort((p, q) => Math.hypot(p.x - palm.x, p.y - palm.y) - Math.hypot(q.x - palm.x, q.y - palm.y));
+  caught.forEach((b, i) => {
+    b.hp -= 1;
+    if (b.hp > 0) { b.lock = 0; b.sp *= 1.2; splat(b.x, b.y, 8, "#7dd3fc"); return; }
+    b.dead = 1;
+    combo++;
+    const mult = 1 + Math.min(combo - 1, 9) * 0.25 + i * 0.5;   // 한 방에 여럿이면 더 크게
+    const v = Math.round(bugScore(b) * mult);
+    gained += v;
+    splat(b.x, b.y, b.fed > 0 ? 22 : 13, b.fed > 0 ? "#ff4d6d" : "#a7f3d0");
+    pushFloat({ x: b.x, y: b.y, t: 0, txt: "+" + v, c: b.fed > 0 ? "#ff8fa3" : "#c6f6d5", s: 40 + i * 6 });
+    sfx.hit(i);
+  });
+  bugs = bugs.filter(b => !b.dead);
+  score += gained;
+  bestCombo = Math.max(bestCombo, combo);
+  if (caught.length >= 2) {
+    pushFloat({ x: palm.x, y: palm.y - 130, t: 0, txt: caught.length + "연쇄!", c: "#fde68a", s: 66 });
+    shake = Math.max(shake, 10 + caught.length * 3);
+    flash = 0.5;
+  }
+  palm.still = 0;
+}
+
+function pushFloat(f) {
+  // 같은 자리에 겹치면 위로 밀어 올린다. 안 하면 점수와 "연쇄!"가 서로를 덮는다.
+  for (let guard = 0; guard < 8; guard++) {
+    const clash = floats.some(o => Math.abs(o.x - f.x) < 210 && Math.abs(o.y - f.y) < 54);
+    if (!clash) break;
+    f.y -= 58;
+  }
+  floats.push(f);
+}
+
+function splat(x, y, n, c) {
+  for (let i = 0; i < n; i++) {
+    const a = rand(0, TAU), s = rand(60, 420);
+    parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t: 0, life: rand(0.3, 0.75), c, r: rand(2, 6) });
+  }
+}
+
+function startGame() {
+  state = ST.PLAY;
+  bugs = []; parts = []; floats = []; welts = [];
+  score = 0; combo = 0; bestCombo = 0; bites = 0; wave = 1; waveT = 0; spawnT = 0;
+  elapsed = 0; shake = 0; flash = 0;
+  palm.still = 0; palm.r = R_MIN; palm.clapT = -9;
+  for (let i = 0; i < 3; i++) spawnBug(false);
+}
+
+function gameOver() {
+  state = ST.OVER; sfx.over(); bumpToday();
+  if (score > best()) setBest(score);
+}
+
+/* ── 갱신 ─────────────────────────────────────────────*/
+function update(dt) {
+  elapsed += dt;
+  shake = Math.max(0, shake - dt * 34);
+  flash = Math.max(0, flash - dt * 2.6);
+
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i]; p.t += dt;
+    if (p.t > p.life) { parts.splice(i, 1); continue; }
+    p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 620 * dt; p.vx *= 0.96;
+  }
+  for (let i = floats.length - 1; i >= 0; i--) {
+    const f = floats[i]; f.t += dt; f.y -= 62 * dt;
+    if (f.t > 0.95) floats.splice(i, 1);
+  }
+  for (let i = welts.length - 1; i >= 0; i--) { welts[i].t += dt; if (welts[i].t > 2.4) welts.splice(i, 1); }
+
+  if (state !== ST.PLAY) {
+    if (whineGain) whineGain.gain.value = 0;
+    // 타이틀에서도 모기는 날아다닌다 — 정지 화면이면 게임이 뭔지 안 보인다
+    for (const b of bugs) {
+      b.ph += dt * b.turn; b.a += Math.sin(b.ph) * dt * 2.6;
+      b.x += Math.cos(b.a) * b.sp * 0.7 * dt; b.y += Math.sin(b.a) * b.sp * 0.7 * dt;
+      if (b.x < 40) { b.x = 40; b.a = rand(-1, 1); }
+      if (b.x > W - 40) { b.x = W - 40; b.a = Math.PI + rand(-1, 1); }
+      if (b.y < 100) { b.y = 100; b.a = rand(0.4, 2.7); }
+      if (b.y > H * 0.93) { b.y = H * 0.93; b.a = -rand(0.4, 2.7); }
+    }
+    return;
+  }
+
+  // 손바닥 — 목표점으로 부드럽게. 멈춰 있으면 "숨죽이기" 게이지가 찬다.
+  const dx = palm.tx - palm.x, dy = palm.ty - palm.y;
+  const moved = Math.hypot(dx, dy);
+  palm.x += dx * Math.min(1, dt * 13); palm.y += dy * Math.min(1, dt * 13);
+  palm.still = moved < 5 ? Math.min(HOLD_FULL, palm.still + dt) : 0;
+  palm.r = R_MIN + (R_MAX - R_MIN) * Math.pow(palm.still / HOLD_FULL, 0.75);
+
+  // 웨이브
+  waveT += dt;
+  const waveLen = 22;
+  if (waveT > waveLen) {
+    waveT = 0; wave++; sfx.wave();
+    pushFloat({ x: W / 2, y: H * 0.34, t: 0, txt: "WAVE " + wave, c: "#7dd3fc", s: 78 });
+    spawnBug(true);
+  }
+  spawnT -= dt;
+  const target = 3 + Math.floor(wave * 1.6);
+  if (spawnT <= 0 && bugs.length < target) { spawnBug(false); spawnT = Math.max(0.35, 1.5 - wave * 0.09); }
+
+  let alive = 0;
+  for (const b of bugs) {
+    alive++;
+    // 지그재그 비행 + 손바닥 근처에서는 살짝 피한다
+    b.ph += dt * b.turn;
+    b.a += Math.sin(b.ph) * dt * 2.6;
+    const tdx = palm.x - b.x, tdy = palm.y - b.y, td = Math.hypot(tdx, tdy) || 1;
+    const want = Math.atan2(tdy, tdx);
+    const pull = td > palm.r * 1.35 ? 0.9 : -0.5;          // 멀면 다가오고 가까우면 뺀다
+    let da = ((want - b.a + Math.PI * 3) % TAU) - Math.PI;
+    b.a += da * pull * dt * 1.5;
+    const sp = b.sp * (1 - b.fed * 0.3);
+    b.x += Math.cos(b.a) * sp * dt; b.y += Math.sin(b.a) * sp * dt;
+
+    // 화면 밖으로 새지 않게
+    if (b.x < 40) { b.x = 40; b.a = rand(-1, 1); }
+    if (b.x > W - 40) { b.x = W - 40; b.a = Math.PI + rand(-1, 1); }
+    if (b.y < 100) { b.y = 100; b.a = rand(0.4, 2.7); }
+    if (b.y > H * 0.93) { b.y = H * 0.93; b.a = -rand(0.4, 2.7); }
+
+    // 락온 — 조준은 게임이 한다. 사람은 타이밍만 본다.
+    const inR = td < palm.r;
+    b.lock = clamp(b.lock + (inR ? dt * 4.2 : -dt * 6), 0, 1);
+
+    // 문다 — 손 위에 BITE_HOLD 만큼 붙어 있어야 한다
+    b.biteCd -= dt;
+    b.near = td < BITE_R ? b.near + dt : 0;
+    if (b.biteCd <= 0 && b.fed < 1 && b.near >= BITE_HOLD) {
+      b.fed = 1; b.biteCd = 99; bites++; combo = 0;
+      shake = Math.max(shake, 16); sfx.bite();
+      welts.push({ x: palm.x + rand(-40, 40), y: palm.y + rand(-40, 40), t: 0 });
+      pushFloat({ x: palm.x, y: palm.y - 100, t: 0, txt: "물렸다!", c: "#ff4d6d", s: 56 });
+      b.near = 0; b.a = Math.atan2(b.y - palm.y, b.x - palm.x); b.sp *= 1.4;
+      if (bites >= BITE_MAX) { gameOver(); return; }
+    }
+  }
+  if (whineGain) whineGain.gain.value = soundOn ? Math.min(0.05, 0.006 * alive) : 0;
+}
+
+/* ── 그리기 ───────────────────────────────────────────*/
+function bg() {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, "#101827"); g.addColorStop(0.55, "#0a0d13"); g.addColorStop(1, "#05070a");
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+  // 창문 — 방 안이라는 걸 한 장면에 알리는 유일한 배경 요소
+  ctx.save();
+  const wx = W * 0.16, wy = H * 0.06, ww = W * 0.68, wh = H * 0.2;
+  const wg = ctx.createLinearGradient(0, wy, 0, wy + wh);
+  wg.addColorStop(0, "rgba(96,130,190,0.20)"); wg.addColorStop(1, "rgba(40,60,100,0.05)");
+  ctx.fillStyle = wg; ctx.fillRect(wx, wy, ww, wh);
+  ctx.strokeStyle = "rgba(150,180,230,0.16)"; ctx.lineWidth = 4;
+  ctx.strokeRect(wx, wy, ww, wh);
+  ctx.beginPath(); ctx.moveTo(wx + ww / 2, wy); ctx.lineTo(wx + ww / 2, wy + wh);
+  ctx.moveTo(wx, wy + wh / 2); ctx.lineTo(wx + ww, wy + wh / 2); ctx.stroke();
+  ctx.restore();
+
+  // 바닥 라인
+  ctx.strokeStyle = "rgba(120,160,200,0.10)"; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(0, H * 0.93); ctx.lineTo(W, H * 0.93); ctx.stroke();
+}
+
+function drawBug(b) {
+  const wing = Math.sin(elapsed * 46 + b.ph) * 0.5 + 0.5;
+  ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.a);
+  const s = b.boss ? 1.9 : 1;
+
+  if (b.lock > 0.02) {                         // 락온 링
+    ctx.save(); ctx.rotate(-b.a);
+    ctx.strokeStyle = `rgba(253,224,71,${0.25 + b.lock * 0.6})`;
+    ctx.lineWidth = 3 + b.lock * 3;
+    ctx.beginPath(); ctx.arc(0, 0, 30 * s + (1 - b.lock) * 34, 0, TAU); ctx.stroke();
+    ctx.restore();
+  }
+  // 어두운 방이라 실루엣만으로는 안 보인다 — 은은한 발광을 깔아 준다
+  const gl = ctx.createRadialGradient(0, 0, 0, 0, 0, 46 * s);
+  const gc = b.fed > 0 ? "255,77,109" : (b.boss ? "192,132,252" : "150,190,240");
+  gl.addColorStop(0, `rgba(${gc},0.34)`); gl.addColorStop(1, `rgba(${gc},0)`);
+  ctx.fillStyle = gl;
+  ctx.beginPath(); ctx.arc(0, 0, 46 * s, 0, TAU); ctx.fill();
+
+  // 날개
+  ctx.fillStyle = `rgba(190,220,255,${0.16 + wing * 0.2})`;
+  ctx.beginPath(); ctx.ellipse(-4 * s, -12 * s, 17 * s, 6 * s, -0.5, 0, TAU); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(-4 * s, 12 * s, 17 * s, 6 * s, 0.5, 0, TAU); ctx.fill();
+  // 몸통 — 배부르면 붉어진다
+  ctx.fillStyle = b.fed > 0 ? "#ff4d6d" : (b.boss ? "#c084fc" : "#8fa6c4");
+  ctx.beginPath(); ctx.ellipse(0, 0, 13 * s * (1 + b.fed * 0.5), 6.5 * s * (1 + b.fed * 0.6), 0, 0, TAU); ctx.fill();
+  // 주둥이 + 다리
+  ctx.strokeStyle = b.fed > 0 ? "#ff8fa3" : "#6f8099"; ctx.lineWidth = 2.4 * s;
+  ctx.beginPath(); ctx.moveTo(11 * s, 0); ctx.lineTo(24 * s, 0); ctx.stroke();
+  for (let i = -1; i <= 1; i += 2) {
+    ctx.beginPath(); ctx.moveTo(-2 * s, 3 * s * i); ctx.lineTo(-15 * s, 14 * s * i); ctx.stroke();
+  }
+  if (b.boss) {
+    ctx.save(); ctx.rotate(-b.a);
+    ctx.fillStyle = "#e9d5ff"; ctx.font = "700 22px system-ui"; ctx.textAlign = "center";
+    ctx.fillText("×" + b.hp, 0, -46);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+function drawPalm() {
+  const since = elapsed - palm.clapT;
+  const clapping = since < 0.16;
+  const charge = palm.still / HOLD_FULL;
+
+  // 사거리 원 — 숨죽이면 넓어진다
+  ctx.save();
+  ctx.strokeStyle = `rgba(125,211,252,${0.16 + charge * 0.4})`;
+  ctx.lineWidth = 3 + charge * 4;
+  ctx.setLineDash(charge >= 1 ? [] : [16, 14]);
+  ctx.beginPath(); ctx.arc(palm.x, palm.y, palm.r, 0, TAU); ctx.stroke();
+  ctx.setLineDash([]);
+  if (charge >= 1) {
+    ctx.strokeStyle = "rgba(253,224,71,0.45)"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(palm.x, palm.y, palm.r + 12, 0, TAU); ctx.stroke();
+  }
+  ctx.restore();
+
+  // 손바닥 — 손뼉 순간 납작해진다
+  const sq = clapping ? 1 - since / 0.16 : 0;
+  ctx.save(); ctx.translate(palm.x, palm.y); ctx.scale(1 + sq * 0.45, 1 - sq * 0.35);
+  ctx.fillStyle = "#f2c9a0"; ctx.strokeStyle = "#b98a66"; ctx.lineWidth = 5;
+  // 손가락 넷 — 손뼉 때 살짝 벌어진다
+  for (let i = 0; i < 4; i++) {
+    const fx = -46 + i * 27, len = 62 - Math.abs(i - 1.5) * 9;
+    ctx.save(); ctx.translate(fx, -46); ctx.rotate((i - 1.5) * 0.09 * (1 + sq));
+    ctx.beginPath(); ctx.roundRect(-11, -len, 22, len + 22, 11); ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+  // 엄지
+  ctx.save(); ctx.translate(-50, 6); ctx.rotate(-0.75);
+  ctx.beginPath(); ctx.roundRect(-12, -44, 24, 62, 12); ctx.fill(); ctx.stroke();
+  ctx.restore();
+  // 손바닥
+  ctx.beginPath(); ctx.roundRect(-54, -50, 108, 106, 30); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = "rgba(170,115,85,0.35)"; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(-30, -22); ctx.quadraticCurveTo(0, 4, 26, -6); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-34, 4); ctx.quadraticCurveTo(-4, 22, 22, 20); ctx.stroke();
+  ctx.restore();
+
+  // 물린 자국
+  for (const w of welts) {
+    const a = 1 - w.t / 2.4;
+    ctx.fillStyle = `rgba(255,90,110,${a * 0.55})`;
+    ctx.beginPath(); ctx.arc(w.x, w.y, 14 + w.t * 9, 0, TAU); ctx.fill();
+  }
+
+  if (clapping) {   // 충격파
+    ctx.strokeStyle = `rgba(255,255,255,${(1 - since / 0.16) * 0.7})`;
+    ctx.lineWidth = 8 * (1 - since / 0.16);
+    ctx.beginPath(); ctx.arc(palm.x, palm.y, 40 + since * 900, 0, TAU); ctx.stroke();
+  }
+}
+
+function hud() {
+  ctx.save();
+  ctx.fillStyle = "#e6edf7"; ctx.font = "800 74px system-ui"; ctx.textAlign = "left";
+  ctx.fillText(score.toLocaleString(), 52, 118);
+  ctx.font = "600 28px system-ui"; ctx.fillStyle = "#7d8ba3";
+  ctx.fillText("점수", 52, 152);
+
+  // 물린 횟수
+  ctx.textAlign = "right";
+  for (let i = 0; i < BITE_MAX; i++) {
+    ctx.fillStyle = i < bites ? "#ff4d6d" : "rgba(255,255,255,0.16)";
+    ctx.beginPath(); ctx.arc(W - 62 - i * 52, 96, 17, 0, TAU); ctx.fill();
+  }
+  ctx.fillStyle = "#7d8ba3"; ctx.font = "600 26px system-ui";
+  ctx.fillText("WAVE " + wave, W - 52, 152);
+
+  if (combo > 1) {
+    ctx.textAlign = "center"; ctx.fillStyle = "#fde68a";
+    ctx.font = "900 " + (60 + Math.min(combo, 12) * 3) + "px system-ui";
+    ctx.fillText(combo + " COMBO", W / 2, 210);
+  }
+
+  // 숨죽이기 게이지
+  const c = palm.still / HOLD_FULL;
+  ctx.textAlign = "center"; ctx.fillStyle = c >= 1 ? "#fde68a" : "#5c6b82";
+  ctx.font = "700 30px system-ui";
+  ctx.fillText(c >= 1 ? "숨 참는 중 — 사거리 최대" : "가만히 있으면 사거리가 넓어진다", W / 2, H * 0.965);
+  ctx.fillStyle = "rgba(255,255,255,0.12)";
+  ctx.fillRect(W * 0.25, H * 0.972, W * 0.5, 9);
+  ctx.fillStyle = c >= 1 ? "#fde68a" : "#7dd3fc";
+  ctx.fillRect(W * 0.25, H * 0.972, W * 0.5 * c, 9);
+  ctx.restore();
+}
+
+/* 버튼 — 좌표를 한 군데서만 정의해 그리기와 클릭 판정이 어긋나지 않게 한다 */
+const titleBtn = { x: W / 2, y: H * 0.62, w: 560, h: 130, t: "시작하기" };
+const soundBtn = { x: W / 2, y: H * 0.62 + 160, w: 560, h: 100, t: "" };
+const overBtn  = { x: W / 2, y: H * 0.70, w: 560, h: 130, t: "다시 하기" };
+const hitBtn = (p, b) => Math.abs(p.x - b.x) < b.w / 2 && Math.abs(p.y - b.y) < b.h / 2;
+
+function drawBtn(b, label, primary) {
+  ctx.save();
+  ctx.fillStyle = primary ? "#7dd3fc" : "rgba(255,255,255,0.08)";
+  ctx.beginPath(); ctx.roundRect(b.x - b.w / 2, b.y - b.h / 2, b.w, b.h, 22); ctx.fill();
+  if (!primary) { ctx.strokeStyle = "rgba(255,255,255,0.2)"; ctx.lineWidth = 3; ctx.stroke(); }
+  ctx.fillStyle = primary ? "#07090d" : "#cbd5e1";
+  ctx.font = "800 " + (primary ? 52 : 38) + "px system-ui";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(label, b.x, b.y + 2);
+  ctx.restore();
+}
+
+function title() {
+  ctx.save(); ctx.textAlign = "center";
+  ctx.fillStyle = "#7dd3fc"; ctx.font = "700 34px system-ui";
+  ctx.fillText("한여름 밤의 모기 사냥", W / 2, H * 0.3);
+  ctx.fillStyle = "#f1f5f9"; ctx.font = "900 210px system-ui";
+  ctx.fillText("짝!", W / 2, H * 0.42);
+
+  ctx.fillStyle = "#94a3b8"; ctx.font = "600 34px system-ui";
+  ctx.fillText("드래그로 손을 옮기고, 떼면 손뼉", W / 2, H * 0.48);
+  ctx.fillText("가만히 있으면 사거리가 넓어진다", W / 2, H * 0.525);
+  ctx.fillStyle = "#64748b"; ctx.font = "600 30px system-ui";
+  ctx.fillText("노란 링이 켜졌을 때만 잡힌다 · 헛손질하면 흩어진다", W / 2, H * 0.57);
+
+  drawBtn(titleBtn, "시작하기", true);
+  drawBtn(soundBtn, soundOn ? "소리 켬" : "소리 끔", false);
+
+  ctx.fillStyle = "#7d8ba3"; ctx.font = "600 32px system-ui";
+  ctx.fillText("최고 " + best().toLocaleString() + "점 · " + rankOf(best()), W / 2, H * 0.79);
+  const left = Math.max(0, DAILY_GOAL - todayCount());
+  ctx.fillStyle = left ? "#fde68a" : "#4ade80";
+  ctx.fillText(left ? "오늘의 목표 — " + left + "판 더" : "오늘의 목표 달성", W / 2, H * 0.83);
+  ctx.restore();
+}
+
+function over() {
+  ctx.save();
+  ctx.fillStyle = "rgba(5,7,10,0.82)"; ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#ff4d6d"; ctx.font = "900 90px system-ui";
+  ctx.fillText("세 방 물렸다", W / 2, H * 0.34);
+
+  ctx.fillStyle = "#f1f5f9"; ctx.font = "900 150px system-ui";
+  ctx.fillText(score.toLocaleString(), W / 2, H * 0.46);
+  ctx.fillStyle = "#7d8ba3"; ctx.font = "600 34px system-ui";
+  ctx.fillText("최고 연쇄 " + bestCombo + "회 · WAVE " + wave, W / 2, H * 0.51);
+
+  const isBest = score >= best() && score > 0;
+  ctx.fillStyle = isBest ? "#fde68a" : "#94a3b8"; ctx.font = "700 40px system-ui";
+  ctx.fillText(isBest ? "최고 기록 경신" : "최고 " + best().toLocaleString() + "점", W / 2, H * 0.575);
+  ctx.fillStyle = "#7dd3fc"; ctx.font = "700 36px system-ui";
+  ctx.fillText(rankOf(score), W / 2, H * 0.625);
+
+  drawBtn(overBtn, "다시 하기", true);
+  ctx.restore();
+}
+
+function render() {
+  ctx.save();
+  if (shake > 0.4) ctx.translate(rand(-shake, shake), rand(-shake, shake));
+  bg();
+  for (const p of parts) {
+    ctx.globalAlpha = 1 - p.t / p.life;
+    ctx.fillStyle = p.c;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, TAU); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  if (state === ST.PLAY) { for (const b of bugs) drawBug(b); drawPalm(); hud(); }
+  else if (state === ST.TITLE) { for (const b of bugs) drawBug(b); title(); }
+  else { for (const b of bugs) drawBug(b); drawPalm(); hud(); over(); }
+
+  for (const f of floats) {
+    ctx.globalAlpha = 1 - Math.pow(f.t / 0.95, 2.2);
+    ctx.fillStyle = f.c; ctx.font = "900 " + f.s + "px system-ui"; ctx.textAlign = "center";
+    ctx.fillText(f.txt, f.x, f.y);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  if (flash > 0) {                       // 연쇄 순간의 짧은 화이트 — 점멸이 아니라 1회 감쇠
+    ctx.fillStyle = `rgba(255,255,255,${flash * 0.18})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+}
+
+/* ── 루프 ─────────────────────────────────────────────*/
+let last = performance.now();
+function loop(t) {
+  const dt = Math.min(0.05, (t - last) / 1000); last = t;
+  update(dt); render();
+  requestAnimationFrame(loop);
+}
+for (let i = 0; i < 4; i++) spawnBug(false);   // 타이틀 화면에도 모기가 날아다닌다
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
