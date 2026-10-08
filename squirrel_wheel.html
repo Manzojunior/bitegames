@@ -384,6 +384,7 @@ soundBtn.addEventListener('click', () => {
   try { localStorage.setItem('sw_sound', soundOn ? '1' : '0'); } catch (e) {}
   if (soundOn) initAudio();
   renderSoundBtn();
+  soundBtn.blur();   // 포커스가 남으면 다음 스페이스가 소리 버튼을 누른다
 });
 renderSoundBtn();
 function tone(freq, type, dur, vol = 0.1) {
@@ -551,7 +552,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 // 타이밍 게임이라 click(손을 뗄 때)이 아니라 누르는 순간 판정한다 — 마우스·터치 공통
-stopBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); tryStop(); });
+stopBtn.addEventListener('pointerdown', (e) => { if (e.button !== 0) return; e.preventDefault(); tryStop(); });
 
 startBtn.addEventListener('click', () => { initAudio(); start(); });
 

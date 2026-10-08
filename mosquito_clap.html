@@ -151,14 +151,13 @@ addEventListener("pointerup", unlockAudio);
 addEventListener("touchend", unlockAudio);
 
 /* 터치는 손가락이 손바닥과 노란 링을 가린다 — 손을 손가락보다 조금 위에 띄운다 */
-const TOUCH_LIFT = 150;
 let dragging = false, lift = 0;
 cv.addEventListener("pointerdown", e => {
   e.preventDefault(); unlockAudio();
   const p = toLocal(e);
   if (state === ST.TITLE) { if (hitBtn(p, titleBtn)) startGame(); else if (hitBtn(p, soundBtn)) toggleSound(); return; }
   if (state === ST.OVER)  { if (hitBtn(p, overBtn)) startGame(); else if (hitBtn(p, overSoundBtn)) toggleSound(); return; }
-  lift = e.pointerType === "touch" ? TOUCH_LIFT : 0;
+  lift = e.pointerType === "touch" ? 50 * H / cv.getBoundingClientRect().height : 0;   // 화면에서 50px 위 — 손가락이 손·노란 링을 가리지 않게(태블릿에서도 같은 거리)
   dragging = true; palm.tx = p.x; palm.ty = Math.max(0, p.y - lift); cv.setPointerCapture(e.pointerId);
 });
 cv.addEventListener("pointermove", e => {
