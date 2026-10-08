@@ -31,6 +31,8 @@
             width: 100%;
             max-width: 800px;
             height: 400px;
+            max-height: 100vh;
+            max-height: 100dvh;
             background-color: #faf8ef;
             overflow: hidden;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
@@ -213,7 +215,7 @@
         /* Message Bubble for long texts */
         #message-bubble {
             position: absolute;
-            top: 60px;
+            top: 72px;
             left: 50%;
             transform: translateX(-50%);
             background: rgba(255, 255, 255, 0.9);
@@ -269,6 +271,9 @@
             align-items: center;
             z-index: 20;
             text-align: center;
+            padding: 12px;
+            overflow-y: auto;
+            touch-action: pan-y;
         }
 
         h1 {
@@ -299,16 +304,43 @@
             box-shadow: 4px 4px 0 #2c3e50;
         }
 
-        button:hover {
-            background-color: #2c3e50;
-            color: #faf8ef;
-            box-shadow: 2px 2px 0 #2c3e50;
-            transform: translate(2px, 2px);
+        /* 터치 기기에서는 hover 가 눌린 채로 남으므로 마우스일 때만 */
+        @media (hover: hover) {
+            button:hover {
+                background-color: #2c3e50;
+                color: #faf8ef;
+                box-shadow: 2px 2px 0 #2c3e50;
+                transform: translate(2px, 2px);
+            }
         }
 
         button:active {
             box-shadow: 0 0 0 #2c3e50;
             transform: translate(4px, 4px);
+        }
+
+        #sound-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            z-index: 30;
+            width: 44px;
+            height: 44px;
+            margin: 0;
+            padding: 0;
+            font-size: 20px;
+            line-height: 1;
+            box-shadow: 2px 2px 0 #2c3e50;
+        }
+
+        /* 휴대폰 세로 (360~430px) */
+        @media (max-width: 480px) {
+            h1 { font-size: 26px; margin: 0 0 6px; }
+            p { font-size: 14px; max-width: 92%; }
+            button { font-size: 18px; padding: 10px 20px; margin-top: 14px; }
+            #win-screen h1 { font-size: 30px; }
+            #ui { font-size: 16px; top: 10px; left: 12px; }
+            #message-bubble { font-size: 14px; padding: 8px 12px; }
         }
 
         #game-over-screen {
@@ -403,12 +435,14 @@
         <!-- Start Screen -->
         <div id="start-screen" class="screen">
             <h1>고객 만족을 향하여</h1>
-            <p><strong>점프:</strong> 스페이스바 / 윗방향키 / 마우스 클릭 / 터치 상단</p>
-            <p><strong>이동:</strong> 좌우 방향키 / 터치 좌우</p>
+            <p><strong>점프:</strong> 스페이스바 / 윗방향키 / 화면 가운데 클릭·터치</p>
+            <p><strong>이동:</strong> 좌우 방향키 / 화면 왼쪽·오른쪽 누르고 있기</p>
             <p>공중에 떠 있는 <strong>'양해'</strong>와 <strong>'공감'</strong>을 획득하세요.</p>
             <p>획득 시 속도가 빨라져 목표에 더 빨리 도달합니다.</p>
             <button id="start-btn">여정 시작하기</button>
         </div>
+
+        <button id="sound-btn" aria-label="소리 끄기">🔊</button>
 
         <!-- Confetti Container for WIN state -->
         <div id="confetti-container"></div>
@@ -458,6 +492,8 @@
         const messageBubble = document.getElementById('message-bubble');
         const turbulence = document.getElementById('turbulence-filter');
         const wrapper = document.getElementById('game-wrapper');
+        // 무대 폭은 실제 화면 폭을 따른다 (휴대폰 세로에서 800px 기준이면 캐릭터가 화면 밖으로 나간다)
+        const stageW = () => wrapper.clientWidth;
 
         // --- Input Handling ---
         function tryJump() {
@@ -482,32 +518,54 @@
         });
 
         // Mouse & Touch handling
-        wrapper.addEventListener('mousedown', (e) => {
+        // 화면을 3등분: 왼쪽 = 왼쪽 이동, 가운데 = 점프, 오른쪽 = 오른쪽 이동
+        function zoneOf(clientX) {
             const rect = wrapper.getBoundingClientRect();
-            const relX = e.clientX - rect.left;
-            if (relX < rect.width / 3) keys.left = true;
-            else if (relX > (rect.width / 3) * 2) keys.right = true;
+            const relX = clientX - rect.left;
+            if (relX < rect.width / 3) return 'left';
+            if (relX > (rect.width / 3) * 2) return 'right';
+            return 'mid';
+        }
+        // 버튼 위의 입력이나 게임 밖 화면(시작·승리)에서는 기본 동작(클릭)을 막지 않는다
+        const isUiTouch = (e) => !isRunning || e.target.closest('button');
+
+        wrapper.addEventListener('mousedown', (e) => {
+            if (isUiTouch(e)) return;
+            const zone = zoneOf(e.clientX);
+            if (zone === 'left') keys.left = true;
+            else if (zone === 'right') keys.right = true;
             else tryJump();
         });
         wrapper.addEventListener('mouseup', () => { keys.left = false; keys.right = false; });
         wrapper.addEventListener('mouseleave', () => { keys.left = false; keys.right = false; });
 
+        // 남아 있는 손가락 기준으로 좌우 상태를 다시 계산한다 (한 손가락을 떼도 다른 손가락 이동은 유지)
+        function syncTouchKeys(touches) {
+            keys.left = false;
+            keys.right = false;
+            for (let i = 0; i < touches.length; i++) {
+                const zone = zoneOf(touches[i].clientX);
+                if (zone === 'left') keys.left = true;
+                else if (zone === 'right') keys.right = true;
+            }
+        }
+
         wrapper.addEventListener('touchstart', (e) => {
+            if (isUiTouch(e)) return;
             e.preventDefault();
-            const rect = wrapper.getBoundingClientRect();
-            for (let i = 0; i < e.touches.length; i++) {
-                const relX = e.touches[i].clientX - rect.left;
-                if (relX < rect.width / 3) keys.left = true;
-                else if (relX > (rect.width / 3) * 2) keys.right = true;
-                else tryJump();
+            syncTouchKeys(e.touches);
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                if (zoneOf(e.changedTouches[i].clientX) === 'mid') tryJump();
             }
         }, { passive: false });
 
-        wrapper.addEventListener('touchend', (e) => {
+        function onTouchEnd(e) {
+            if (isUiTouch(e)) { keys.left = false; keys.right = false; return; }
             e.preventDefault();
-            keys.left = false;
-            keys.right = false;
-        }, { passive: false });
+            syncTouchKeys(e.touches);
+        }
+        wrapper.addEventListener('touchend', onTouchEnd, { passive: false });
+        wrapper.addEventListener('touchcancel', onTouchEnd, { passive: false });
 
         document.getElementById('start-btn').addEventListener('click', () => {
             document.getElementById('start-screen').style.display = 'none';
@@ -519,19 +577,38 @@
         let audioCtx;
         let bgmOscillator;
         let bgmGain;
-        const noteFreqs = { 'C4': 261.63, 'D4': 293.66, 'E4': 329.63, 'F4': 349.23, 'G4': 392.00, 'A4': 440.00, 'B4': 493.88, 'C5': 523.25 };
+        const noteFreqs = { 'C4': 261.63, 'D4': 293.66, 'E4': 329.63, 'F4': 349.23, 'G4': 392.00, 'A4': 440.00, 'B4': 493.88, 'C5': 523.25, 'E5': 659.25, 'G5': 783.99, 'C6': 1046.50, 'E6': 1318.51 };
         const melody = ['E4', 'E4', 'E4', 'C4', 'E4', 'G4', null, 'C4', 'G4', 'E4', 'A4', 'B4', 'A4'];
         let noteIndex = 0;
         let bgmInterval;
 
+        let soundOn = true;
+        try { soundOn = localStorage.getItem('cs_sound') !== '0'; } catch (e) { }
+        const soundBtn = document.getElementById('sound-btn');
+
         function initAudio() {
-            if (audioCtx) return;
-            const AudioContext = window.AudioContext || window.webkitAudioContext;
-            audioCtx = new AudioContext();
+            if (!audioCtx) {
+                const AudioContext = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContext();
+            }
+            // 모바일 브라우저는 컨텍스트를 suspended 로 만드는 경우가 있다
+            if (audioCtx.state === 'suspended') audioCtx.resume();
         }
 
+        function renderSoundBtn() {
+            soundBtn.textContent = soundOn ? '🔊' : '🔇';
+            soundBtn.setAttribute('aria-label', soundOn ? '소리 끄기' : '소리 켜기');
+        }
+        soundBtn.addEventListener('click', () => {
+            soundOn = !soundOn;
+            try { localStorage.setItem('cs_sound', soundOn ? '1' : '0'); } catch (e) { }
+            if (soundOn) initAudio();
+            renderSoundBtn();
+        });
+        renderSoundBtn();
+
         function playTone(freq, type, duration, vol = 0.1) {
-            if (!audioCtx) return;
+            if (!audioCtx || !soundOn) return;
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
             osc.type = type;
@@ -621,9 +698,10 @@
             if (keys.left) player.x -= PLAYER_SPEED_X;
             if (keys.right) player.x += PLAYER_SPEED_X;
 
-            // Constrain to screen width bounds (approximate 0 to 750)
+            // Constrain to screen width bounds
+            const maxX = stageW() - player.width - 10;
+            if (player.x > maxX) player.x = maxX;
             if (player.x < 10) player.x = 10;
-            if (player.x > 740) player.x = 740;
 
             // Vertical Movement (Jump)
             if (player.isJumping) {
@@ -785,7 +863,8 @@
             // Random Y between jump height limits (approx. bottom 60 to 140)
             const yPos = 60 + Math.random() * 80;
             el.style.bottom = `${20 + yPos}px`;
-            el.style.left = '800px';
+            const spawnX = stageW();
+            el.style.left = `${spawnX}px`;
 
             // Sketchy Bubble
             el.innerHTML = `
@@ -798,7 +877,7 @@
             entities.push({
                 type: 'item',
                 el: el,
-                x: 800,
+                x: spawnX,
                 y: yPos,
                 width: 60,
                 height: 60,
@@ -814,7 +893,8 @@
             const yPos = 180 + Math.random() * 120;
             const scale = 0.5 + Math.random() * 0.5;
             el.style.bottom = `${yPos}px`;
-            el.style.left = '800px';
+            const spawnX = stageW();
+            el.style.left = `${spawnX}px`;
             el.style.opacity = 0.5;
             el.style.width = `${100 * scale}px`;
             el.style.height = `${50 * scale}px`;
@@ -827,13 +907,14 @@
         `;
             bgContainer.appendChild(el);
             // Clouds move slower (parallax)
-            entities.push({ type: 'cloud', el: el, x: 800, y: yPos, width: 100, height: 50, speedMultiplier: 0.3 + Math.random() * 0.3, collected: false });
+            entities.push({ type: 'cloud', el: el, x: spawnX, y: yPos, width: 100, height: 50, speedMultiplier: 0.3 + Math.random() * 0.3, collected: false });
         }
 
         function spawnGoal() {
             const el = document.createElement('div');
             el.id = 'goal';
-            el.style.left = '850px';
+            const spawnX = stageW() + 50;
+            el.style.left = `${spawnX}px`;
 
             // Sketchy Trophy / Banner
             el.innerHTML = `
@@ -849,7 +930,7 @@
             </svg>
         `;
             entitiesContainer.appendChild(el);
-            entities.push({ type: 'goal', el: el, x: 850, y: 0, width: 120, height: 160, speedMultiplier: 1, collected: false });
+            entities.push({ type: 'goal', el: el, x: spawnX, y: 0, width: 120, height: 160, speedMultiplier: 1, collected: false });
         }
 
         function triggerWin() {

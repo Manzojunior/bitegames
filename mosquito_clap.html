@@ -39,11 +39,17 @@ const TAU = Math.PI * 2;
 /* ── 소리 ──────────────────────────────────────────────
    에셋 파일 없이 Web Audio 로 만든다. 모기 날갯소리는
    600Hz 사인 + 비브라토, 손뼉은 짧은 노이즈 버스트.      */
-let AC = null, master = null, whineGain = null, soundOn = true;
+/* 저장소 — 사파리 사생활 보호 모드 등에서 localStorage 가 예외를 던지면 게임이 멈추므로 감싼다 */
+const store = {
+  get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} },
+};
+
+let AC = null, master = null, whineGain = null, soundOn = store.get("clap_sound") !== "0";
 function audioInit() {
   if (AC) return;
   AC = new (window.AudioContext || window.webkitAudioContext)();
-  master = AC.createGain(); master.gain.value = 0.5; master.connect(AC.destination);
+  master = AC.createGain(); master.gain.value = soundOn ? 0.5 : 0; master.connect(AC.destination);
 
   // 모기 날갯소리 — 살아있는 모기 수에 따라 음량이 오른다
   const osc = AC.createOscillator(), vib = AC.createOscillator(), vibG = AC.createGain();
@@ -97,11 +103,11 @@ const R_MIN = 118, R_MAX = 262;
 const BITE_R = 66;               // 물리는 거리는 손 크기 고정 — 사거리와 분리한다
 const BITE_HOLD = 0.5;           // 이만큼 손 위에 붙어 있어야 문다(피할 시간을 준다)
 
-const best = () => +(localStorage.getItem("clap_best") || 0);
-const setBest = v => localStorage.setItem("clap_best", v);
+const best = () => +(store.get("clap_best") || 0);
+const setBest = v => store.set("clap_best", v);
 const todayKey = () => "clap_day_" + new Date().toISOString().slice(0, 10);
-const todayCount = () => +(localStorage.getItem(todayKey()) || 0);
-const bumpToday = () => localStorage.setItem(todayKey(), todayCount() + 1);
+const todayCount = () => +(store.get(todayKey()) || 0);
+const bumpToday = () => store.set(todayKey(), todayCount() + 1);
 const DAILY_GOAL = 3;
 
 /* 등급 — 다시 켤 이유를 하나 만든다 */
@@ -138,30 +144,43 @@ function toLocal(e) {
   const r = cv.getBoundingClientRect();
   return { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H };
 }
-let dragging = false;
+/* 소리 잠금 해제 — 크롬 안드로이드·iOS 는 터치의 pointerdown 을 사용자 동작으로 치지 않는다.
+   손을 뗄 때(pointerup/touchend)도 resume 해야 첫 판부터 소리가 난다. */
+function unlockAudio() { audioInit(); if (AC.state === "suspended") AC.resume(); }
+addEventListener("pointerup", unlockAudio);
+addEventListener("touchend", unlockAudio);
+
+/* 터치는 손가락이 손바닥과 노란 링을 가린다 — 손을 손가락보다 조금 위에 띄운다 */
+const TOUCH_LIFT = 150;
+let dragging = false, lift = 0;
 cv.addEventListener("pointerdown", e => {
-  e.preventDefault(); audioInit(); if (AC.state === "suspended") AC.resume();
+  e.preventDefault(); unlockAudio();
   const p = toLocal(e);
   if (state === ST.TITLE) { if (hitBtn(p, titleBtn)) startGame(); else if (hitBtn(p, soundBtn)) toggleSound(); return; }
-  if (state === ST.OVER)  { if (hitBtn(p, overBtn)) startGame(); return; }
-  dragging = true; palm.tx = p.x; palm.ty = p.y; cv.setPointerCapture(e.pointerId);
+  if (state === ST.OVER)  { if (hitBtn(p, overBtn)) startGame(); else if (hitBtn(p, overSoundBtn)) toggleSound(); return; }
+  lift = e.pointerType === "touch" ? TOUCH_LIFT : 0;
+  dragging = true; palm.tx = p.x; palm.ty = Math.max(0, p.y - lift); cv.setPointerCapture(e.pointerId);
 });
 cv.addEventListener("pointermove", e => {
   if (!dragging) return;
-  const p = toLocal(e); palm.tx = p.x; palm.ty = p.y;
+  const p = toLocal(e); palm.tx = p.x; palm.ty = Math.max(0, p.y - lift);
 });
 cv.addEventListener("pointerup", e => {
   if (state === ST.PLAY && dragging) clap();
   dragging = false;
 });
+cv.addEventListener("pointercancel", () => { dragging = false; });   // 시스템 제스처로 끊기면 손뼉 없이 놓는다
 addEventListener("keydown", e => {
   if (e.code === "Space" || e.code === "Enter") {
-    e.preventDefault(); audioInit(); if (AC.state === "suspended") AC.resume();
+    e.preventDefault(); unlockAudio();
     if (state === ST.PLAY) clap(); else startGame();
   }
 });
 
-function toggleSound() { soundOn = !soundOn; if (master) master.gain.value = soundOn ? 0.5 : 0; }
+function toggleSound() {
+  soundOn = !soundOn; store.set("clap_sound", soundOn ? "1" : "0");
+  if (master) master.gain.value = soundOn ? 0.5 : 0;
+}
 
 /* ── 손뼉 ─────────────────────────────────────────────
    락온된 모기가 없는데 치면 헛손질이다 — 콤보가 끊기고
@@ -383,7 +402,7 @@ function drawBug(b) {
   }
   if (b.boss) {
     ctx.save(); ctx.rotate(-b.a);
-    ctx.fillStyle = "#e9d5ff"; ctx.font = "700 22px system-ui"; ctx.textAlign = "center";
+    ctx.fillStyle = "#e9d5ff"; ctx.font = "700 32px system-ui"; ctx.textAlign = "center";
     ctx.fillText("×" + b.hp, 0, -46);
     ctx.restore();
   }
@@ -448,8 +467,8 @@ function hud() {
   ctx.save();
   ctx.fillStyle = "#e6edf7"; ctx.font = "800 74px system-ui"; ctx.textAlign = "left";
   ctx.fillText(score.toLocaleString(), 52, 118);
-  ctx.font = "600 28px system-ui"; ctx.fillStyle = "#7d8ba3";
-  ctx.fillText("점수", 52, 152);
+  ctx.font = "600 36px system-ui"; ctx.fillStyle = "#7d8ba3";
+  ctx.fillText("점수", 52, 158);
 
   // 물린 횟수
   ctx.textAlign = "right";
@@ -457,8 +476,8 @@ function hud() {
     ctx.fillStyle = i < bites ? "#ff4d6d" : "rgba(255,255,255,0.16)";
     ctx.beginPath(); ctx.arc(W - 62 - i * 52, 96, 17, 0, TAU); ctx.fill();
   }
-  ctx.fillStyle = "#7d8ba3"; ctx.font = "600 26px system-ui";
-  ctx.fillText("WAVE " + wave, W - 52, 152);
+  ctx.fillStyle = "#7d8ba3"; ctx.font = "600 36px system-ui";
+  ctx.fillText("WAVE " + wave, W - 52, 158);
 
   if (combo > 1) {
     ctx.textAlign = "center"; ctx.fillStyle = "#fde68a";
@@ -469,7 +488,7 @@ function hud() {
   // 숨죽이기 게이지
   const c = palm.still / HOLD_FULL;
   ctx.textAlign = "center"; ctx.fillStyle = c >= 1 ? "#fde68a" : "#5c6b82";
-  ctx.font = "700 30px system-ui";
+  ctx.font = "700 38px system-ui";
   ctx.fillText(c >= 1 ? "숨 참는 중 — 사거리 최대" : "가만히 있으면 사거리가 넓어진다", W / 2, H * 0.965);
   ctx.fillStyle = "rgba(255,255,255,0.12)";
   ctx.fillRect(W * 0.25, H * 0.972, W * 0.5, 9);
@@ -479,9 +498,11 @@ function hud() {
 }
 
 /* 버튼 — 좌표를 한 군데서만 정의해 그리기와 클릭 판정이 어긋나지 않게 한다 */
-const titleBtn = { x: W / 2, y: H * 0.62, w: 560, h: 130, t: "시작하기" };
-const soundBtn = { x: W / 2, y: H * 0.62 + 160, w: 560, h: 100, t: "" };
+const titleBtn = { x: W / 2, y: H * 0.645, w: 560, h: 130, t: "시작하기" };
+const soundBtn = { x: W / 2, y: H * 0.645 + 165, w: 560, h: 120, t: "" };
 const overBtn  = { x: W / 2, y: H * 0.70, w: 560, h: 130, t: "다시 하기" };
+const overSoundBtn = { x: W / 2, y: H * 0.70 + 165, w: 560, h: 120, t: "" };
+const soundLabel = () => soundOn ? "🔊 소리 켜짐 · 눌러서 끄기" : "🔇 소리 꺼짐 · 눌러서 켜기";
 const hitBtn = (p, b) => Math.abs(p.x - b.x) < b.w / 2 && Math.abs(p.y - b.y) < b.h / 2;
 
 function drawBtn(b, label, primary) {
@@ -490,7 +511,7 @@ function drawBtn(b, label, primary) {
   ctx.beginPath(); ctx.roundRect(b.x - b.w / 2, b.y - b.h / 2, b.w, b.h, 22); ctx.fill();
   if (!primary) { ctx.strokeStyle = "rgba(255,255,255,0.2)"; ctx.lineWidth = 3; ctx.stroke(); }
   ctx.fillStyle = primary ? "#07090d" : "#cbd5e1";
-  ctx.font = "800 " + (primary ? 52 : 38) + "px system-ui";
+  ctx.font = "800 " + (primary ? 52 : 40) + "px system-ui";
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
   ctx.fillText(label, b.x, b.y + 2);
   ctx.restore();
@@ -503,20 +524,22 @@ function title() {
   ctx.fillStyle = "#f1f5f9"; ctx.font = "900 210px system-ui";
   ctx.fillText("짝!", W / 2, H * 0.42);
 
-  ctx.fillStyle = "#94a3b8"; ctx.font = "600 34px system-ui";
-  ctx.fillText("드래그로 손을 옮기고, 떼면 손뼉", W / 2, H * 0.48);
-  ctx.fillText("가만히 있으면 사거리가 넓어진다", W / 2, H * 0.525);
-  ctx.fillStyle = "#64748b"; ctx.font = "600 30px system-ui";
-  ctx.fillText("노란 링이 켜졌을 때만 잡힌다 · 헛손질하면 흩어진다", W / 2, H * 0.57);
+  // 휴대폰(폭 360px)에서 캔버스는 1/3 로 줄어든다 — 글자는 40px 이상이어야 실제 13px 이상
+  ctx.fillStyle = "#94a3b8"; ctx.font = "600 42px system-ui";
+  ctx.fillText("드래그로 손을 옮기고, 떼면 손뼉", W / 2, H * 0.475);
+  ctx.fillText("가만히 있으면 사거리가 넓어진다", W / 2, H * 0.51);
+  ctx.fillStyle = "#7d8ba3"; ctx.font = "600 38px system-ui";
+  ctx.fillText("노란 링이 켜졌을 때만 잡힌다", W / 2, H * 0.55);
+  ctx.fillText("헛손질하면 흩어진다", W / 2, H * 0.58);
 
   drawBtn(titleBtn, "시작하기", true);
-  drawBtn(soundBtn, soundOn ? "소리 켬" : "소리 끔", false);
+  drawBtn(soundBtn, soundLabel(), false);
 
-  ctx.fillStyle = "#7d8ba3"; ctx.font = "600 32px system-ui";
-  ctx.fillText("최고 " + best().toLocaleString() + "점 · " + rankOf(best()), W / 2, H * 0.79);
+  ctx.fillStyle = "#7d8ba3"; ctx.font = "600 40px system-ui";
+  ctx.fillText("최고 " + best().toLocaleString() + "점 · " + rankOf(best()), W / 2, H * 0.80);
   const left = Math.max(0, DAILY_GOAL - todayCount());
   ctx.fillStyle = left ? "#fde68a" : "#4ade80";
-  ctx.fillText(left ? "오늘의 목표 — " + left + "판 더" : "오늘의 목표 달성", W / 2, H * 0.83);
+  ctx.fillText(left ? "오늘의 목표 — " + left + "판 더" : "오늘의 목표 달성", W / 2, H * 0.84);
   ctx.restore();
 }
 
@@ -529,7 +552,7 @@ function over() {
 
   ctx.fillStyle = "#f1f5f9"; ctx.font = "900 150px system-ui";
   ctx.fillText(score.toLocaleString(), W / 2, H * 0.46);
-  ctx.fillStyle = "#7d8ba3"; ctx.font = "600 34px system-ui";
+  ctx.fillStyle = "#7d8ba3"; ctx.font = "600 40px system-ui";
   ctx.fillText("최고 연쇄 " + bestCombo + "회 · WAVE " + wave, W / 2, H * 0.51);
 
   const isBest = score >= best() && score > 0;
@@ -539,6 +562,7 @@ function over() {
   ctx.fillText(rankOf(score), W / 2, H * 0.625);
 
   drawBtn(overBtn, "다시 하기", true);
+  drawBtn(overSoundBtn, soundLabel(), false);
   ctx.restore();
 }
 
